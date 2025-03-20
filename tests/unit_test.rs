@@ -2,7 +2,7 @@ use db_cov19mx::download::download_file;
 use db_cov19mx::unzip::extract_zip;
 use db_cov19mx::utils::download_urls;
 use db_cov19mx::utils::unzip_data;
-use db_cov19mx::xlxs_to_pl::excel_to_dataframe;
+use db_cov19mx::xlxs_to_pl::ExcelReader;
 use polars::prelude::*;
 use std::env;
 use std::fs::create_dir_all;
@@ -89,14 +89,8 @@ fn test_df_paths() -> Result<(), color_eyre::eyre::Error> {
     Ok(())
 }
 #[test]
-#[ignore = "ok"]
-fn xlsx_to_df() -> Result<(), color_eyre::eyre::Error> {
-    let path = Path::new(
-        "/home/luish/Documentos/Proyects/Rust/db_cov19mx/diccionario_datos_abiertos/240708 Descriptores_.xlsx",
-    );
-    let df = excel_to_dataframe(path).unwrap();
-    // println!("{df:?}");
-    assert_eq!(df.shape(), (43, 5));
-
-    Ok(())
+fn test_excel() {
+    let reader = ExcelReader::new("/home/luish/Documentos/Proyects/Rust/db_cov19mx/diccionario_datos_abiertos/240708 Descriptores_.xlsx");
+    let df = reader.with_sheet(Some("Hoja1".into())).finsh().unwrap();
+    assert_eq!(43, df.height());
 }
