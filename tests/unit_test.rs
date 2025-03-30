@@ -1,4 +1,7 @@
+use anyhow::Result;
+use chrono::prelude::*;
 use db_cov19mx::download::download_file;
+use db_cov19mx::pl_sql::*;
 use db_cov19mx::unzip::extract_zip;
 use db_cov19mx::utils::download_urls;
 use db_cov19mx::utils::unzip_data;
@@ -89,8 +92,52 @@ fn test_df_paths() -> Result<(), color_eyre::eyre::Error> {
     Ok(())
 }
 #[test]
+#[ignore = "ok"]
 fn test_excel() {
     let reader = ExcelReader::new("/home/luish/Documentos/Proyects/Rust/db_cov19mx/diccionario_datos_abiertos/240708 Descriptores_.xlsx");
     let df = reader.with_sheet(Some("Hoja1".into())).finsh().unwrap();
     assert_eq!(43, df.height());
+}
+#[test]
+#[ignore = "ok"]
+fn test_build_schema() {
+    let df: DataFrame = df!(
+        "name" => ["Alice Archer", "Ben Brown", "Chloe Cooper", "Daniel Donovan"],
+        "birthdate" => [
+            NaiveDate::from_ymd_opt(1997, 1, 10).unwrap(),
+            NaiveDate::from_ymd_opt(1985, 2, 15).unwrap(),
+            NaiveDate::from_ymd_opt(1983, 3, 22).unwrap(),
+            NaiveDate::from_ymd_opt(1981, 4, 30).unwrap(),
+        ],
+        "weight" => [57.9, 72.5, 53.6, 83.1],  // (kg)
+        "height" => [1.56, 1.77, 1.65, 1.75],  // (m)
+    )
+    .unwrap();
+    let qry = SqliteSchema::from_polars_schema(df.schema()).finish("test");
+    println!("{qry}");
+}
+
+#[test]
+fn test_pl_to_sql() -> Result<(), Box<dyn std::error::Error>> {
+    let df: DataFrame = df!(
+        "name" => ["Alice Archer", "Ben Brown", "Chloe Cooper", "Daniel Donovan"],
+        "birthdate" => [
+            NaiveDate::from_ymd_opt(1997, 1, 10).unwrap(),
+            NaiveDate::from_ymd_opt(1985, 2, 15).unwrap(),
+            NaiveDate::from_ymd_opt(1983, 3, 22).unwrap(),
+            NaiveDate::from_ymd_opt(1981, 4, 30).unwrap(),
+        ],
+        "weight" => [57.9, 72.5, 53.6, 83.1],  // (kg)
+        "height" => [1.56, 1.77, 1.65, 1.75],  // (m)
+    )
+    .unwrap();
+
+    let db_url = "Test.db";
+
+    SqlWriter::new(db_url)?
+        .with_table(Some("test"))
+        .if_exists(Some("replace"))?
+        .finish(&df)?;
+    println!("{df:?}");
+    panic!();
 }
