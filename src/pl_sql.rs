@@ -271,6 +271,7 @@ impl SqlWriter {
     }
     pub fn with_index_label<T: Into<String>>(mut self, index_label: Option<T>) -> Self {
         self.index_label = index_label.map(|t| t.into());
+        self.index = true;
         self
     }
     pub fn finish(&mut self, df: &DataFrame) -> Result<(), color_eyre::eyre::Error> {
@@ -354,16 +355,18 @@ impl SqlWriter {
                 None => None,
             }
         };
-
+        let qyr_insert = if self.index {
+            format!("INSERT INTO {} VALUES ('index','row')", table_name)
+        } else {
+            format!("INSERT INTO {} VALUES ('row')", table_name)
+        };
         (0..df.height()).for_each(|i| {
             let row = df.get(i);
             let row = generate_insert_qry(row);
             if let Some(row) = row {
-                let qry = if self.index {
-                    format!("INSERT INTO {} VALUES ({})", table_name, row)
-                } else {
-                    format!("INSERT INTO {} VALUES ({},{})", table_name, i, row)
-                };
+                let qry = qyr_insert
+                    .replace("'index'", &i.to_string())
+                    .replace("'row'", &row);
                 let _ = rt.block_on(sqlx::query(&qry).execute(&self.pool));
             }
         });
