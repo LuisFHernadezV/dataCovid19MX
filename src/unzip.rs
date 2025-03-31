@@ -1,4 +1,3 @@
-use anyhow::Result;
 use color_eyre::eyre::Ok;
 use std::fs::{self, File};
 use std::io::{self};

@@ -1,4 +1,3 @@
-use anyhow::Result;
 use calamine::{open_workbook, Data, Reader, Xlsx};
 use color_eyre::eyre::Ok;
 use polars::prelude::*;

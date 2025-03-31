@@ -1,4 +1,3 @@
-use anyhow::Result;
 use chrono::prelude::*;
 use db_cov19mx::download::download_file;
 use db_cov19mx::pl_sql::*;

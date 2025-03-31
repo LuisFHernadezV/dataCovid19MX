@@ -1,5 +1,4 @@
 // use crate::my_errors::MyError;
-use anyhow::Result;
 use color_eyre::eyre::Ok;
 use reqwest;
 use std::fs::write;
