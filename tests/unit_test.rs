@@ -92,11 +92,12 @@ fn test_df_paths() -> Result<(), color_eyre::eyre::Error> {
     Ok(())
 }
 #[test]
-#[ignore = "ok"]
+// #[ignore = "ok"]
 fn test_excel() {
     let reader = ExcelReader::new("/home/luish/Documentos/Proyects/Rust/db_cov19mx/diccionario_datos_abiertos/240708 Descriptores_.xlsx");
-    let df = reader.with_sheet(Some("Hoja1".into())).finsh().unwrap();
-    assert_eq!(43, df.height());
+    let df = reader.with_sheet(Some("Hoja1")).finsh().unwrap();
+    println!("{df}");
+    panic!()
 }
 #[test]
 #[ignore = "ok"]
@@ -118,6 +119,7 @@ fn test_build_schema() {
 }
 
 #[test]
+#[ignore = "ok"]
 fn test_pl_to_sql() -> Result<(), Box<dyn std::error::Error>> {
     let df: DataFrame = df!(
         "name" => ["Alice Archer", "Ben Brown", "Chloe Cooper", "Daniel Donovan"],

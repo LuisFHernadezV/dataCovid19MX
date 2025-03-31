@@ -1,10 +1,27 @@
 use anyhow::Result;
-use calamine::{open_workbook, Reader, Xlsx};
+use calamine::{open_workbook, Data, Reader, Xlsx};
 use color_eyre::eyre::Ok;
 use polars::prelude::*;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+fn string_to_static_str(s: String) -> &'static str {
+    Box::leak(s.into_boxed_str())
+}
+fn to_str(s: String) -> &'static str {
+    string_to_static_str(s)
+}
+
+fn data_excel_to_polars(data_excel: &Data) -> AnyValue {
+    match data_excel {
+        Data::Empty => AnyValue::Null,
+        Data::Int(i) => AnyValue::Int64(*i),
+        Data::Float(f) => AnyValue::Float64(*f),
+        Data::Bool(b) => AnyValue::Boolean(*b),
+        _ => AnyValue::String(to_str(data_excel.to_string())),
+    }
+}
+
 fn excel_to_dataframe(
     mut workbook: Xlsx<BufReader<File>>,
     sheet: Option<String>,
@@ -15,7 +32,7 @@ fn excel_to_dataframe(
 
     // Extraer los datos
     let mut header_row = Vec::new();
-    let mut data_rows: Vec<Vec<String>> = Vec::new();
+    let mut data_rows: Vec<Vec<AnyValue>> = Vec::new();
 
     for (row_idx, row) in range.rows().enumerate() {
         if row_idx == 0 {
@@ -27,7 +44,7 @@ fn excel_to_dataframe(
             // Procesar las filas de datos
             let mut data_row = Vec::new();
             for cell in row {
-                data_row.push(cell.to_string());
+                data_row.push(data_excel_to_polars(cell));
             }
             data_rows.push(data_row);
         }
@@ -37,18 +54,18 @@ fn excel_to_dataframe(
     let mut series_vec: Vec<Column> = Vec::new();
 
     for (col_idx, col_name) in header_row.iter().enumerate() {
-        let mut column_data: Vec<String> = Vec::new();
+        let mut column_data: Vec<AnyValue> = Vec::new();
 
         for row in &data_rows {
             if col_idx < row.len() {
                 column_data.push(row[col_idx].clone());
             } else {
-                column_data.push(String::new());
+                column_data.push(AnyValue::Null);
             }
         }
 
         // Crear la serie para esta columna
-        let series = Series::new(col_name.into(), column_data);
+        let series = Series::from_any_values(col_name.into(), column_data.as_ref(), false)?;
         series_vec.push(series.into_column());
     }
 
@@ -75,8 +92,8 @@ impl<P: AsRef<Path>> ExcelReader<P> {
             sheet: None,
         }
     }
-    pub fn with_sheet(mut self, sheet: Option<String>) -> Self {
-        self.sheet = sheet;
+    pub fn with_sheet<T: Into<String>>(mut self, sheet: Option<T>) -> Self {
+        self.sheet = sheet.map(|t| t.into());
         self
     }
     pub fn get_file_path(&self) -> &P {
