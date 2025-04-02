@@ -69,7 +69,7 @@ pub struct SqliteColOption {
     nullable: bool,
     primary_key: bool,
     unique: bool,
-    default: Option<SqliteDataType>,
+    default: Option<String>,
     foreing_key: Option<ForeinKey>,
 }
 impl Default for SqliteColOption {
@@ -102,8 +102,12 @@ impl SqliteColOption {
         self.unique = unique;
         self
     }
-    pub fn with_default(mut self, default: Option<SqliteDataType>) -> Self {
-        self.default = if self.primary_key { None } else { default };
+    pub fn with_default<T: Into<String>>(mut self, default: Option<T>) -> Self {
+        self.default = if self.primary_key {
+            None
+        } else {
+            default.map(|d| d.into())
+        };
         self
     }
     pub fn foreign_key(mut self, table: String, column: String) -> Self {
