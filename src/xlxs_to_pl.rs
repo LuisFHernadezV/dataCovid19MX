@@ -17,7 +17,7 @@ fn data_excel_to_polars(data_excel: &Data) -> AnyValue {
 }
 
 fn excel_to_dataframe(
-    mut workbook: Xlsx<BufReader<File>>,
+    workbook: &mut Xlsx<BufReader<File>>,
     sheet: Option<String>,
 ) -> Result<DataFrame, color_eyre::eyre::Error> {
     // Obtener la primera hoja de trabajo
@@ -72,16 +72,24 @@ pub struct ExcelReader<P>
 where
     P: AsRef<Path>,
 {
-    file_path: P,
-    workbook: Option<Xlsx<BufReader<File>>>,
+    file_path: Option<P>,
+    workbook: Xlsx<BufReader<File>>,
     sheet: Option<String>,
 }
 
 impl<P: AsRef<Path>> ExcelReader<P> {
-    pub fn new(file_path: P) -> Self {
-        let workbook: Option<Xlsx<BufReader<File>>> = open_workbook(&file_path).ok();
-        ExcelReader {
+    pub fn new(file_path: P) -> Result<Self, color_eyre::eyre::Error> {
+        let workbook: Xlsx<BufReader<File>> = open_workbook(&file_path)?;
+        let file_path = Some(file_path);
+        Ok(ExcelReader {
             file_path,
+            workbook,
+            sheet: None,
+        })
+    }
+    pub fn from_workbook(workbook: Xlsx<BufReader<File>>) -> Self {
+        ExcelReader {
+            file_path: None,
             workbook,
             sheet: None,
         }
@@ -90,12 +98,14 @@ impl<P: AsRef<Path>> ExcelReader<P> {
         self.sheet = sheet.map(|t| t.into());
         self
     }
-    pub fn get_file_path(&self) -> &P {
-        &self.file_path
+    pub fn get_file_path(&self) -> Option<&P> {
+        self.file_path.as_ref()
+    }
+    pub fn sheet_names(&self) -> Vec<String> {
+        self.workbook.sheet_names()
     }
 
-    pub fn finsh(mut self) -> Result<DataFrame, color_eyre::eyre::Error> {
-        let workbook = self.workbook.take().unwrap();
-        excel_to_dataframe(workbook, self.sheet)
+    pub fn finsh(&mut self) -> Result<DataFrame, color_eyre::eyre::Error> {
+        excel_to_dataframe(&mut self.workbook, self.sheet.clone())
     }
 }

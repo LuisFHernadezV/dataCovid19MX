@@ -93,8 +93,8 @@ fn test_df_paths() -> Result<(), color_eyre::eyre::Error> {
 }
 #[test]
 #[ignore = "ok"]
-fn test_excel() {
-    let reader = ExcelReader::new("/home/luish/Documentos/Proyects/Rust/db_cov19mx/diccionario_datos_abiertos/240708 Descriptores_.xlsx");
+fn test_excel() -> Result<(), Box<dyn std::error::Error>> {
+    let reader = ExcelReader::new("/home/luish/Documentos/Proyects/Rust/db_cov19mx/diccionario_datos_abiertos/240708 Descriptores_.xlsx")?;
     let df = reader.with_sheet(Some("Hoja1")).finsh().unwrap();
     println!("{df}");
     panic!()
