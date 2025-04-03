@@ -3,6 +3,7 @@ use db_cov19mx::download::download_file;
 use db_cov19mx::pl_sql::*;
 use db_cov19mx::unzip::extract_zip;
 use db_cov19mx::utils::download_urls;
+use db_cov19mx::utils::get_unique_contry;
 use db_cov19mx::utils::unzip_data;
 use db_cov19mx::xlxs_to_pl::ExcelReader;
 use polars::prelude::*;
@@ -91,7 +92,7 @@ fn test_df_paths() -> Result<(), color_eyre::eyre::Error> {
     Ok(())
 }
 #[test]
-// #[ignore = "ok"]
+#[ignore = "ok"]
 fn test_excel() {
     let reader = ExcelReader::new("/home/luish/Documentos/Proyects/Rust/db_cov19mx/diccionario_datos_abiertos/240708 Descriptores_.xlsx");
     let df = reader.with_sheet(Some("Hoja1")).finsh().unwrap();
@@ -141,4 +142,16 @@ fn test_pl_to_sql() -> Result<(), Box<dyn std::error::Error>> {
         .finish(&df)?;
     println!("{df:?}");
     panic!();
+}
+#[test]
+#[ignore = "ok"]
+fn test_unique_contry() -> PolarsResult<()> {
+    let mut df = LazyCsvReader::new("csv_files/COVID19MEXICO2020.csv")
+        .with_has_header(true)
+        .with_infer_schema_length(Some(10000))
+        .finish()?;
+    df = get_unique_contry(&df, "PAIS", "Id_PAISES")?;
+    eprintln!("{}", df.collect()?);
+
+    Ok(())
 }

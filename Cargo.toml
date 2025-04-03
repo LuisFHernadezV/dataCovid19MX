@@ -9,7 +9,7 @@ async-std = "1.13.0"
 calamine = { version = "0.26.1", features = ["dates"] }
 color-eyre = "0.6.3"
 futures = "0.3.31"
-polars = { version = "0.46.0", features = ["dtype-decimal", "lazy"] }
+polars = { version = "0.46.0", features = ["concat_str", "dtype-decimal", "lazy", "strings"] }
 reqwest = "0.12.14"
 thiserror = "2.0.12"
 sqlx = { version = "0.6", features = ["runtime-tokio-native-tls", "any", "sqlite","time"] }
@@ -17,3 +17,4 @@ tokio = { version = "1.44.0", features = ["full"] }
 zip = "2.2.3"
 chrono = "0.4.40"
 indexmap = "2.8.0"
+sha2 = "0.10.8"

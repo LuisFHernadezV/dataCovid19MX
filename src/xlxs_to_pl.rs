@@ -1,15 +1,10 @@
+use crate::utils::to_str;
 use calamine::{open_workbook, Data, Reader, Xlsx};
 use color_eyre::eyre::Ok;
 use polars::prelude::*;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-fn string_to_static_str(s: String) -> &'static str {
-    Box::leak(s.into_boxed_str())
-}
-fn to_str(s: String) -> &'static str {
-    string_to_static_str(s)
-}
 
 fn data_excel_to_polars(data_excel: &Data) -> AnyValue {
     match data_excel {

@@ -708,6 +708,7 @@ dependencies = [
  "indexmap 2.8.0",
  "polars",
  "reqwest",
+ "sha2",
  "sqlx",
  "thiserror 2.0.12",
  "tokio",
