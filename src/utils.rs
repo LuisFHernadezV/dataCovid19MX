@@ -98,7 +98,8 @@ pub fn get_df_cat<P: AsRef<Path>>(
                         .cast(DataType::UInt64)
                         .alias("CLAVE"),
                     all(),
-                ]);
+                ])
+                .with_columns([col(secon_col.clone()).cast(DataType::UInt64)]);
         } else {
             df_lazy = df
                 .lazy()
