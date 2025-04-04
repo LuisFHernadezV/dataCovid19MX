@@ -3,6 +3,7 @@ use db_cov19mx::download::download_file;
 use db_cov19mx::pl_sql::*;
 use db_cov19mx::unzip::extract_zip;
 use db_cov19mx::utils::download_urls;
+use db_cov19mx::utils::get_df_cat;
 use db_cov19mx::utils::get_unique_contry;
 use db_cov19mx::utils::unzip_data;
 use db_cov19mx::xlxs_to_pl::ExcelReader;
@@ -95,7 +96,7 @@ fn test_df_paths() -> Result<(), color_eyre::eyre::Error> {
 #[ignore = "ok"]
 fn test_excel() -> Result<(), Box<dyn std::error::Error>> {
     let reader = ExcelReader::new("/home/luish/Documentos/Proyects/Rust/db_cov19mx/diccionario_datos_abiertos/240708 Descriptores_.xlsx")?;
-    let df = reader.with_sheet(Some("Hoja1")).finsh().unwrap();
+    let df = reader.with_sheet(Some("Hoja1")).finish().unwrap();
     println!("{df}");
     panic!()
 }
@@ -154,4 +155,15 @@ fn test_unique_contry() -> PolarsResult<()> {
     eprintln!("{}", df.collect()?);
 
     Ok(())
+}
+#[test]
+#[ignore = "ok"]
+fn test_get_df_cat() -> Result<(), color_eyre::eyre::Error> {
+    let path = "/home/luish/Documentos/Proyects/Rust/db_cov19mx/diccionario_datos_abiertos/240708 Catalogos.xlsx";
+    let dfs = get_df_cat(path)?;
+    for (sheet, df) in dfs {
+        println!("{sheet}");
+        println!("{df}");
+    }
+    panic!()
 }

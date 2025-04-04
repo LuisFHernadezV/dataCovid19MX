@@ -1,9 +1,15 @@
 use crate::download::download_file;
+use crate::pl_sql::{SqliteColOption, SqliteDataType, SqliteSchema};
 use crate::unzip::extract_zip;
+use crate::xlxs_to_pl::ExcelReader;
+use calamine::{open_workbook, Reader, Xlsx};
 use polars::prelude::*;
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::env;
 use std::fs::create_dir_all;
+use std::fs::File;
+use std::io::BufReader;
 use std::path::Path;
 use std::thread::{self, JoinHandle};
 pub async fn download_urls(urls: Vec<&str>, dir: &Path) -> Result<(), color_eyre::eyre::Error> {
@@ -66,7 +72,104 @@ fn hash_column(exp: Expr) -> Expr {
         GetOutput::from_type(DataType::UInt64),
     )
 }
+pub fn get_df_cat<P: AsRef<Path>>(
+    path: P,
+) -> Result<HashMap<String, DataFrame>, color_eyre::eyre::Error> {
+    let mut result: HashMap<String, DataFrame> = HashMap::new();
+    let workbook: Xlsx<BufReader<File>> = open_workbook(path.as_ref())?;
+    for sheet in workbook.sheet_names() {
+        let df = ExcelReader::new(path.as_ref())?
+            .with_sheet(Some(sheet.clone()))
+            .finish()?;
+        let mut df_lazy: LazyFrame;
+        let firs_col = df.clone().get_column_names()[0].clone();
+        let secon_col = df.clone().get_column_names()[1].clone();
+        if sheet == "Catálogo de ENTIDADES" {
+            df_lazy = df
+                .lazy()
+                .with_columns([col(firs_col.clone()).cast(DataType::UInt64)])
+                .rename(["CLAVE_ENTIDAD"], ["CLAVE"], false);
+        } else if sheet == "Catálogo MUNICIPIOS" {
+            df_lazy = df
+                .lazy()
+                .with_columns([col(firs_col.clone()).cast(DataType::UInt64)])
+                .select([
+                    concat_str([col(firs_col.clone()), col(secon_col.clone())], "", false)
+                        .cast(DataType::UInt64)
+                        .alias("CLAVE"),
+                    all(),
+                ]);
+        } else {
+            df_lazy = df
+                .lazy()
+                .with_columns([col(firs_col.clone()).cast(DataType::UInt64)]);
+        }
+        if sheet == "Catálogo RESULTADO_LAB" {
+            // drop the columns that has all values nuull
+            df_lazy = df_lazy.select([col(firs_col), col(secon_col)]);
+        }
 
+        let name_table = sheet.split_whitespace().last().unwrap_or_default();
+        result.insert(name_table.to_string(), df_lazy.collect()?);
+    }
+    Ok(result)
+}
+pub fn get_schema_pl<P: AsRef<Path>>(path: P) -> Result<SchemaRef, color_eyre::eyre::Error> {
+    let df = ExcelReader::new(path)?.finish()?;
+    let col_name = df.clone().column("NOMBRE DE VARIABLE")?.clone();
+    let col_type = df.clone().column("FORMATO O FUENTE")?.clone();
+    let mut schema = Schema::with_capacity(df.height());
+    for (col, typ) in col_name.phys_iter().zip(col_type.phys_iter()) {
+        let column = col.str_value().to_string();
+        let type_col = typ.str_value().to_string();
+        if type_col.contains("CATÁLOGO") || type_col.contains("CATALÓGO") {
+            schema.with_column(column.into(), DataType::UInt64);
+        } else {
+            schema.with_column(column.into(), DataType::String);
+        }
+    }
+
+    Ok(SchemaRef::new(schema))
+}
+
+pub fn get_schema_sql<P: AsRef<Path>>(path: P) -> Result<SqliteSchema, color_eyre::eyre::Error> {
+    let df = ExcelReader::new(path)?.finish()?;
+    let col_name = df.clone().column("NOMBRE DE VARIABLE")?.clone();
+    let col_type = df.clone().column("FORMATO O FUENTE")?.clone();
+    let mut schema = SqliteSchema::new(
+        "ID_REGISTRO",
+        SqliteColOption::default().with_primary_key(true),
+    );
+    for (col, typ) in col_name
+        .phys_iter()
+        .skip(1)
+        .zip(col_type.phys_iter().skip(1))
+    {
+        let column = col.str_value().to_string();
+        let type_col = typ.str_value().to_string();
+        let id_ref = type_col
+            .clone()
+            .split(":")
+            .skip(1)
+            .collect::<String>()
+            .replace(' ', "");
+        if type_col.contains("CATÁLOGO") || type_col.contains("CATALÓGO") {
+            schema.with_column(
+                column.clone(),
+                SqliteColOption::default()
+                    .with_type_sql(SqliteDataType::INTEGER)
+                    .foreign_key(id_ref, column),
+            );
+        } else {
+            schema.with_column(
+                column,
+                SqliteColOption::default().with_type_sql(SqliteDataType::TEXT),
+            );
+        }
+    }
+
+    Ok(schema)
+}
 pub fn get_unique_contry(df: &LazyFrame, col_name: &str, id_name: &str) -> PolarsResult<LazyFrame> {
     let pais_nacionalidad = df
         .clone()
@@ -88,9 +191,19 @@ pub fn get_unique_contry(df: &LazyFrame, col_name: &str, id_name: &str) -> Polar
 
 pub fn clean_data_covid(df: LazyFrame) -> LazyFrame {
     df.with_columns(vec![
-        concat_str([col("ENTIDAD_RES"), col("MUNICIPIO_RES")], "", false)
-            .cast(DataType::UInt64)
-            .alias("MUNICIPIO_RES"),
+        concat_str(
+            [
+                col("ENTIDAD_RES"),
+                col("MUNICIPIO_RES")
+                    .cast(DataType::String)
+                    .str()
+                    .zfill(lit(3)),
+            ],
+            "",
+            false,
+        )
+        .cast(DataType::UInt64)
+        .alias("MUNICIPIO_RES"),
         hash_column(
             when(col("PAIS_NACIONALIDAD").eq(lit("99")))
                 .then(lit("SE INGONARA"))

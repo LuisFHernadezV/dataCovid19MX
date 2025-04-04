@@ -167,7 +167,7 @@ impl SqliteSchema {
     pub fn iter_types(&self) -> impl Iterator<Item = &SqliteColOption> {
         self.columns.values()
     }
-    pub fn with_column<T: Into<String>>(mut self, column: T, type_of: SqliteColOption) -> Self {
+    pub fn with_column<T: Into<String>>(&mut self, column: T, type_of: SqliteColOption) -> &Self {
         self.columns.insert(column.into(), type_of);
         self
     }
@@ -305,7 +305,7 @@ impl SqlWriter {
         if self.schema.clone().is_some_and(|s| s != schema) {
             for (colums, types) in self.schema.clone().unwrap().iter_fields() {
                 if schema.iter_columns().any(|c| c == colums) {
-                    schema = schema.with_column(colums, types.clone());
+                    schema.with_column(colums, types.clone());
                 }
             }
         }
