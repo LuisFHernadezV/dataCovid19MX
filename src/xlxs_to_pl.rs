@@ -105,7 +105,7 @@ impl<P: AsRef<Path>> ExcelReader<P> {
         self.workbook.sheet_names()
     }
 
-    pub fn finsh(&mut self) -> Result<DataFrame, color_eyre::eyre::Error> {
+    pub fn finish(&mut self) -> Result<DataFrame, color_eyre::eyre::Error> {
         excel_to_dataframe(&mut self.workbook, self.sheet.clone())
     }
 }
