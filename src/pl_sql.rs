@@ -5,8 +5,9 @@ use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::sqlite::SqlitePool;
 use std::path::Path;
 use tokio::runtime::Runtime;
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum SqliteDataType {
+    #[default]
     INTEGER,
     TEXT,
     REAL,
@@ -75,7 +76,7 @@ pub struct SqliteColOption {
 impl Default for SqliteColOption {
     fn default() -> Self {
         Self {
-            type_sql: SqliteDataType::TEXT,
+            type_sql: SqliteDataType::default(),
             nullable: true,
             primary_key: false,
             unique: false,
@@ -110,8 +111,8 @@ impl SqliteColOption {
         };
         self
     }
-    pub fn foreign_key(mut self, table: String, column: String) -> Self {
-        self.foreing_key = Some(ForeinKey::new(table, column));
+    pub fn foreign_key<T: Into<String>>(mut self, table: T, column: T) -> Self {
+        self.foreing_key = Some(ForeinKey::new(table.into(), column.into()));
         self
     }
     pub fn build_col_def<T: Into<String>>(&self, column_name: T) -> String {
@@ -196,12 +197,19 @@ impl SqliteSchema {
         )
     }
 }
+#[derive(Clone, Default)]
+pub enum IfExistsOption {
+    #[default]
+    Fail,
+    Replace,
+    Append,
+}
 
 #[derive(Clone)]
 pub struct SqlWriter {
     pool: SqlitePool,
     table_name: Option<String>,
-    if_exists: Option<String>,
+    if_exists: IfExistsOption,
     index: bool,
     index_label: Option<String>,
     schema: Option<SqliteSchema>,
@@ -215,7 +223,7 @@ impl SqlWriter {
         let pool = rt.block_on(SqlitePool::connect_with(options))?;
         Ok(SqlWriter {
             pool,
-            if_exists: None,
+            if_exists: IfExistsOption::default(),
             index: true,
             index_label: None,
             table_name: None,
@@ -226,40 +234,9 @@ impl SqlWriter {
         self.table_name = table_name.map(|t| t.into());
         self
     }
-    pub fn if_exists<T: Into<String> + std::fmt::Display + std::marker::Copy>(
-        mut self,
-        if_exists: Option<T>,
-    ) -> Result<Self, color_eyre::eyre::Error> {
-        match if_exists {
-            Some(t) => match t.to_string().as_str() {
-                "replace" => self.if_exists = Some("replace".into()),
-                "fail" => {
-                    let rt = Runtime::new().unwrap();
-                    let table = self
-                        .table_name
-                        .as_ref()
-                        .unwrap_or(&"test".to_string())
-                        .clone();
-                    let rows = rt.block_on(
-                        sqlx::query("SELECT name FROM sqlite_master WHERE name = ?")
-                            .bind(&table)
-                            .fetch_all(&self.pool),
-                    )?;
-                    if rows.is_empty() {
-                        return Ok(self);
-                    } else {
-                        return Err(color_eyre::eyre::eyre!("Table {} already exists", table));
-                    }
-                }
-                "append" => self.if_exists = Some("append".into()),
-                _ => {
-                    return Err(color_eyre::eyre::eyre!("Invalid if_exists option: {}", t));
-                }
-            },
-            None => self.if_exists = None,
-        }
-
-        Ok(self)
+    pub fn if_exists(mut self, if_exists: IfExistsOption) -> Self {
+        self.if_exists = if_exists;
+        self
     }
     pub fn with_index(mut self, index: bool) -> Self {
         self.index = index;
@@ -282,10 +259,6 @@ impl SqlWriter {
         let table_name = match self.table_name.as_ref() {
             Some(t) => t.clone(),
             None => "test".to_string(),
-        };
-        let if_exists = match self.if_exists.as_ref() {
-            Some(t) => t.clone(),
-            None => "fail".into(),
         };
         let rt = Runtime::new()?;
         let mut schema = SqliteSchema::from_polars_schema(df.schema());
@@ -310,23 +283,33 @@ impl SqlWriter {
             }
         }
         let qry = schema.finish(&table_name);
-        if if_exists == "replace" {
-            rt.block_on(
-                sqlx::query(&format!("DROP TABLE IF EXISTS {}", table_name)).execute(&self.pool),
-            )?;
-        } else if if_exists == "fail" {
-            let table = self
-                .table_name
-                .as_ref()
-                .unwrap_or(&"test".to_string())
-                .clone();
-            let rows = rt.block_on(
-                sqlx::query("SELECT name FROM sqlite_master WHERE name = ?")
-                    .bind(&table)
-                    .fetch_all(&self.pool),
-            )?;
-            if !rows.is_empty() {
-                return Err(color_eyre::eyre::eyre!("Table {} already exists", table));
+        match self.if_exists {
+            IfExistsOption::Fail => {
+                rt.block_on(
+                    sqlx::query(&format!("DROP TABLE IF EXISTS {}", table_name))
+                        .execute(&self.pool),
+                )?;
+            }
+            IfExistsOption::Replace => {
+                rt.block_on(
+                    sqlx::query(&format!("DROP TABLE IF EXISTS {}", table_name))
+                        .execute(&self.pool),
+                )?;
+            }
+            IfExistsOption::Append => {
+                let table = self
+                    .table_name
+                    .as_ref()
+                    .unwrap_or(&"test".to_string())
+                    .clone();
+                let rows = rt.block_on(
+                    sqlx::query("SELECT name FROM sqlite_master WHERE name = ?")
+                        .bind(&table)
+                        .fetch_all(&self.pool),
+                )?;
+                if !rows.is_empty() {
+                    return Err(color_eyre::eyre::eyre!("Table {} already exists", table));
+                }
             }
         }
         rt.block_on(sqlx::query(&qry).execute(&self.pool))?;
