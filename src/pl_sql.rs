@@ -351,6 +351,7 @@ impl SqlWriter {
             let row = generate_insert_qry(row);
             if let Some(row) = row {
                 let qry = qyr_insert
+                    .clone()
                     .replace("'index'", &i.to_string())
                     .replace("'row'", &row);
                 let _ = rt.block_on(sqlx::query(&qry).execute(&self.pool));
