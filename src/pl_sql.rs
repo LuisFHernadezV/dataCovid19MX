@@ -7,8 +7,8 @@ use std::path::Path;
 use tokio::runtime::Runtime;
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum SqliteDataType {
-    #[default]
     INTEGER,
+    #[default]
     TEXT,
     REAL,
     BLOB,
