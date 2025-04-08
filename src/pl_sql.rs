@@ -241,7 +241,7 @@ impl SqlWriter {
     pub fn with_index(mut self, index: bool) -> Self {
         self.index = index;
         if index {
-            self.index_label = Some("Index".into());
+            self.index_label = Some("Id".into());
         }
         self
     }
@@ -262,6 +262,11 @@ impl SqlWriter {
         };
         let rt = Runtime::new()?;
         let mut schema = SqliteSchema::from_polars_schema(df.schema());
+        self.index_label = if self.index && self.index_label.is_none() {
+            Some("Id".into())
+        } else {
+            None
+        };
         if let Some(index) = self.index_label.as_ref() {
             if df.get_column_names_str().contains(&index.as_str()) {
                 return Err(color_eyre::eyre::eyre!(
@@ -328,7 +333,7 @@ impl SqlWriter {
                             AnyValue::Int128(v) => v.to_string(),
                             AnyValue::Float64(v) => v.to_string(),
                             AnyValue::Decimal(i, d) => format!("{}.{}", i, d),
-                            _ => format!("'{}'", value).replace("'", "''"),
+                            _ => format!("'{}'", value.to_string().replace("'", "''")),
                         })
                         .collect::<Vec<String>>()
                         .join(","),
