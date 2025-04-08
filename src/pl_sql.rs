@@ -284,19 +284,14 @@ impl SqlWriter {
         }
         let qry = schema.finish(&table_name);
         match self.if_exists {
-            IfExistsOption::Fail => {
-                rt.block_on(
-                    sqlx::query(&format!("DROP TABLE IF EXISTS {}", table_name))
-                        .execute(&self.pool),
-                )?;
-            }
+            IfExistsOption::Append => {}
             IfExistsOption::Replace => {
                 rt.block_on(
                     sqlx::query(&format!("DROP TABLE IF EXISTS {}", table_name))
                         .execute(&self.pool),
                 )?;
             }
-            IfExistsOption::Append => {
+            IfExistsOption::Fail => {
                 let table = self
                     .table_name
                     .as_ref()
