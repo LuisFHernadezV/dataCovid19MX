@@ -719,6 +719,7 @@ dependencies = [
  "futures",
  "indexmap 2.8.0",
  "polars",
+ "rayon",
  "reqwest",
  "sha2",
  "sqlx",

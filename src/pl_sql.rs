@@ -3,6 +3,7 @@ use indexmap::IndexMap;
 use polars::prelude::*;
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::sqlite::SqlitePool;
+use std::num::NonZeroUsize;
 use std::path::Path;
 use tokio::runtime::Runtime;
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -70,6 +71,7 @@ pub struct SqliteColOption {
     nullable: bool,
     primary_key: bool,
     unique: bool,
+    auto_increment: bool,
     default: Option<String>,
     foreing_key: Option<ForeinKey>,
 }
@@ -80,6 +82,7 @@ impl Default for SqliteColOption {
             nullable: true,
             primary_key: false,
             unique: false,
+            auto_increment: false,
             default: None,
             foreing_key: None,
         }
@@ -111,6 +114,10 @@ impl SqliteColOption {
         };
         self
     }
+    pub fn with_auto_increment(mut self, auto_increment: bool) -> Self {
+        self.auto_increment = auto_increment;
+        self
+    }
     pub fn foreign_key<T: Into<String>>(mut self, table: T, column: T) -> Self {
         self.foreing_key = Some(ForeinKey::new(table.into(), column.into()));
         self
@@ -122,6 +129,9 @@ impl SqliteColOption {
         }
         if self.unique {
             col_def.push_str(" UNIQUE");
+        }
+        if self.auto_increment {
+            col_def.push_str(" AUTOINCREMENT");
         }
         if let Some(ref default) = self.default {
             col_def.push_str(&format!(" DEFAULT {}", default));
@@ -211,6 +221,8 @@ pub struct SqlWriter {
     table_name: Option<String>,
     if_exists: IfExistsOption,
     index: bool,
+    parallel: bool,
+    batch_size: NonZeroUsize,
     index_label: Option<String>,
     schema: Option<SqliteSchema>,
 }
@@ -225,6 +237,8 @@ impl SqlWriter {
             pool,
             if_exists: IfExistsOption::default(),
             index: true,
+            parallel: true,
+            batch_size: NonZeroUsize::new(1024).unwrap(),
             index_label: None,
             table_name: None,
             schema: None,
@@ -254,7 +268,15 @@ impl SqlWriter {
         self.index = true;
         self
     }
-    pub fn finish(&mut self, df: &DataFrame) -> Result<(), color_eyre::eyre::Error> {
+    pub fn with_batch_size(mut self, batch_size: NonZeroUsize) -> Self {
+        self.batch_size = batch_size;
+        self
+    }
+    pub fn with_parallel(mut self, parallel: bool) -> Self {
+        self.parallel = parallel;
+        self
+    }
+    pub fn finish(&mut self, df: &mut DataFrame) -> Result<(), color_eyre::eyre::Error> {
         // Delete table and if create the schema
         let table_name = match self.table_name.as_ref() {
             Some(t) => t.clone(),
@@ -276,7 +298,9 @@ impl SqlWriter {
             }
             schema = SqliteSchema::new(
                 index,
-                SqliteColOption::default().with_type_sql(SqliteDataType::INTEGER),
+                SqliteColOption::default()
+                    .with_type_sql(SqliteDataType::INTEGER)
+                    .with_auto_increment(true),
             )
             .add_schema(&schema);
         };
@@ -341,22 +365,26 @@ impl SqlWriter {
                 None => None,
             }
         };
-        let qyr_insert = if self.index {
-            format!("INSERT INTO {} VALUES ('index','row')", table_name)
-        } else {
-            format!("INSERT INTO {} VALUES ('row')", table_name)
-        };
-        (0..df.height()).for_each(|i| {
-            let row = df.get(i);
-            let row = generate_insert_qry(row);
-            if let Some(row) = row {
-                let qry = qyr_insert
-                    .clone()
-                    .replace("'index'", &i.to_string())
-                    .replace("'row'", &row);
-                let _ = rt.block_on(sqlx::query(&qry).execute(&self.pool));
+        for dfs in df
+            .to_owned()
+            .split_chunks_by_n(self.batch_size.into(), true)
+        {
+            let mut row_sql = Vec::new();
+            for i in 0..dfs.height() {
+                let row = dfs.get(i);
+                let row = generate_insert_qry(row);
+                if let Some(row) = row {
+                    row_sql.push(format!("({})", row));
+                }
             }
-        });
+            let full_insert = format!(
+                "INSERT INTO {} ({}) VALUES {}",
+                table_name,
+                dfs.get_column_names_str().join(","),
+                row_sql.join(",")
+            );
+            rt.block_on(sqlx::query(&full_insert).execute(&self.pool))?;
+        }
 
         Ok(())
     }

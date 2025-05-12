@@ -2,10 +2,9 @@ use chrono::prelude::*;
 use db_cov19mx::download::download_file;
 use db_cov19mx::pl_sql::*;
 use db_cov19mx::unzip::extract_zip;
-use db_cov19mx::utils::download_urls;
-use db_cov19mx::utils::get_df_cat;
-use db_cov19mx::utils::get_unique_contry;
-use db_cov19mx::utils::unzip_data;
+use db_cov19mx::utils::{
+    download_urls, get_df_cat, get_schema_pl, get_schema_sql, get_unique_contry, unzip_data,
+};
 use db_cov19mx::xlxs_to_pl::ExcelReader;
 use polars::prelude::*;
 use std::env;
@@ -122,7 +121,7 @@ fn test_build_schema() {
 #[test]
 #[ignore = "ok"]
 fn test_pl_to_sql() -> Result<(), Box<dyn std::error::Error>> {
-    let df: DataFrame = df!(
+    let mut df: DataFrame = df!(
         "name" => ["Alice Archer", "Ben Brown", "Chloe Cooper", "Daniel Donovan"],
         "birthdate" => [
             NaiveDate::from_ymd_opt(1997, 1, 10).unwrap(),
@@ -139,8 +138,8 @@ fn test_pl_to_sql() -> Result<(), Box<dyn std::error::Error>> {
 
     SqlWriter::new(db_url)?
         .with_table(Some("test"))
-        .if_exists(Some("replace"))?
-        .finish(&df)?;
+        .if_exists(IfExistsOption::Replace)
+        .finish(&mut df)?;
     println!("{df:?}");
     panic!();
 }
@@ -166,4 +165,72 @@ fn test_get_df_cat() -> Result<(), color_eyre::eyre::Error> {
         println!("{df}");
     }
     panic!()
+}
+#[test]
+#[ignore = "ok"]
+fn test_get_schema_pl() {
+    let path_schema = "/home/luish/Documentos/Proyects/Rust/db_cov19mx/diccionario_datos_abiertos/240708 Descriptores_.xlsx";
+    let path_data =
+        "/home/luish/Documentos/Proyects/Rust/db_cov19mx/csv_files/COVID19MEXICO2021.csv";
+    let schema = get_schema_pl(path_schema).unwrap();
+    let lf = LazyCsvReader::new(path_data)
+        .with_has_header(true)
+        .with_dtype_overwrite(Some(schema))
+        .finish()
+        .unwrap();
+    println!("{:?}", lf.collect().unwrap());
+
+    panic!()
+}
+#[test]
+#[ignore = "ok"]
+fn test_get_schema_sql() {
+    let path_schema = "/home/luish/Documentos/Proyects/Rust/db_cov19mx/diccionario_datos_abiertos/240708 Descriptores_.xlsx";
+    let mut schema = get_schema_sql(path_schema).unwrap();
+    let qry = schema.finish("test");
+    println!("{qry}");
+
+    panic!()
+}
+#[test]
+#[ignore = "ok"]
+fn test_tables_to_sql() -> Result<(), color_eyre::eyre::Error> {
+    let path = "/home/luish/Documentos/Proyects/Rust/db_cov19mx/diccionario_datos_abiertos/240708 Catalogos.xlsx";
+    let dfs = get_df_cat(path)?;
+
+    let schema_des = SqliteSchema::new(
+        "CLAVE",
+        SqliteColOption::default()
+            .with_type_sql(SqliteDataType::INTEGER)
+            .with_primary_key(true),
+    );
+    let sql_write = SqlWriter::new("test.db")?;
+
+    for (tabe_name, mut df) in dfs {
+        sql_write
+            .clone()
+            .with_schema(Some(schema_des.clone()))
+            .with_table(Some(tabe_name))
+            .finish(&mut df)?;
+    }
+    Ok(())
+}
+#[test]
+// #[ignore = "ok"]
+fn test_big_table_insert() -> Result<(), color_eyre::eyre::Error> {
+    let lf = LazyCsvReader::new(
+        "/home/luish/Documentos/Proyects/Rust/db_cov19mx/csv_files/COVID19MEXICO2020.csv",
+    )
+    .with_has_header(true)
+    .with_infer_schema_length(Some(10000))
+    .finish()?;
+
+    let db_url = "Test.db";
+
+    SqlWriter::new(db_url)?
+        .with_table(Some("test"))
+        .with_index(false)
+        .if_exists(IfExistsOption::Replace)
+        .finish(&mut lf.collect()?)?;
+    Ok(())
 }
