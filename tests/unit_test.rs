@@ -9,7 +9,9 @@ use db_cov19mx::xlxs_to_pl::ExcelReader;
 use polars::prelude::*;
 use std::env;
 use std::fs::create_dir_all;
+use std::num::NonZeroUsize;
 use std::path::Path;
+use std::time::Instant;
 use tokio::runtime::Runtime;
 #[cfg(test)]
 #[tokio::test]
@@ -206,11 +208,11 @@ fn test_tables_to_sql() -> Result<(), color_eyre::eyre::Error> {
     );
     let sql_write = SqlWriter::new("test.db")?;
 
-    for (tabe_name, mut df) in dfs {
+    for (table_name, mut df) in dfs {
         sql_write
             .clone()
             .with_schema(Some(schema_des.clone()))
-            .with_table(Some(tabe_name))
+            .with_table(Some(table_name))
             .finish(&mut df)?;
     }
     Ok(())
@@ -226,11 +228,16 @@ fn test_big_table_insert() -> Result<(), color_eyre::eyre::Error> {
     .finish()?;
 
     let db_url = "Test.db";
+    let start = Instant::now();
 
     SqlWriter::new(db_url)?
         .with_table(Some("test"))
         .with_index(false)
         .if_exists(IfExistsOption::Replace)
+        .with_batch_size(NonZeroUsize::new(200_000).unwrap())
         .finish(&mut lf.collect()?)?;
+    let duration = start.elapsed();
+    println!("Duración de finish: {:.2?}", duration);
+    assert!(duration.as_secs_f64() < 2.0);
     Ok(())
 }
