@@ -6,6 +6,7 @@ use futures::future::join;
 use polars::prelude::*;
 use std::env;
 use std::fs;
+use std::num::NonZeroUsize;
 use std::path::Path;
 use tokio::runtime::Runtime;
 
@@ -63,7 +64,7 @@ fn main() -> color_eyre::Result<()> {
     }
     let file_des = dir_dicc.join("240708 Descriptores_.xlsx");
     let schema = get_schema_pl(&file_des)?;
-    let lf = LazyCsvReader::new_paths(files_data.into())
+    let mut lf = LazyCsvReader::new_paths(files_data.into())
         .with_has_header(true)
         .with_dtype_overwrite(Some(schema))
         .finish()?;
@@ -99,10 +100,32 @@ fn main() -> color_eyre::Result<()> {
             .with_type_sql(SqliteDataType::INTEGER)
             .foreign_key("PAISES", "CLAVE"),
     );
-    sql_write
-        .with_schema(Some(schema_sql))
-        .with_table(Some("COVID19MEXICO".to_string()))
-        .with_index(false)
-        .finish(&mut lf.collect()?)?;
+    lf = clean_data_covid(lf);
+    let split_lf = |n: Option<u64>| -> color_eyre::Result<()> {
+        if let Some(n) = n {
+            let mut i = n;
+            let mut df = lf.clone().slice(0, i as u32).collect()?;
+            while !df.is_empty() {
+                sql_write
+                    .clone()
+                    .with_schema(Some(schema_sql.clone()))
+                    .with_table(Some("COVID19MEXICO".to_string()))
+                    .with_batch_size(NonZeroUsize::new(200_000).unwrap())
+                    .with_index(false)
+                    .finish(&mut df)?;
+                i += n;
+                df = lf.clone().slice(i as i64, (i + n) as u32).collect()?;
+            }
+        } else {
+            sql_write
+                .with_schema(Some(schema_sql.clone()))
+                .with_table(Some("COVID19MEXICO".to_string()))
+                .with_batch_size(NonZeroUsize::new(200_000).unwrap())
+                .with_index(false)
+                .finish(&mut lf.collect()?)?;
+        }
+        Ok(())
+    };
+    split_lf(Some(1_000_000))?;
     Ok(())
 }
