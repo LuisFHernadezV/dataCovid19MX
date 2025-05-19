@@ -195,9 +195,9 @@ fn test_get_schema_sql() {
     panic!()
 }
 #[test]
-#[ignore = "ok"]
+// #[ignore = "ok"]
 fn test_tables_to_sql() -> Result<(), color_eyre::eyre::Error> {
-    let path = "/home/luish/Documentos/Proyects/Rust/db_cov19mx/diccionario_datos_abiertos/240708 Catalogos.xlsx";
+    let path = "/home/luish/Documentos/Proyects/Rust/db_cov19mx/data_dicc/240708 Catalogos.xlsx";
     let dfs = get_df_cat(path)?;
 
     let schema_des = SqliteSchema::new(
@@ -206,19 +206,21 @@ fn test_tables_to_sql() -> Result<(), color_eyre::eyre::Error> {
             .with_type_sql(SqliteDataType::INTEGER)
             .with_primary_key(true),
     );
+
     let sql_write = SqlWriter::new("test.db")?;
 
     for (table_name, mut df) in dfs {
         sql_write
             .clone()
             .with_schema(Some(schema_des.clone()))
+            .with_index(false)
             .with_table(Some(table_name))
             .finish(&mut df)?;
     }
-    Ok(())
+    panic!()
 }
 #[test]
-// #[ignore = "ok"]
+#[ignore = "ok"]
 fn test_big_table_insert() -> Result<(), color_eyre::eyre::Error> {
     let lf = LazyCsvReader::new(
         "/home/luish/Documentos/Proyects/Rust/db_cov19mx/csv_files/COVID19MEXICO2020.csv",

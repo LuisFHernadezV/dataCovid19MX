@@ -365,6 +365,10 @@ impl SqlWriter {
                 None => None,
             }
         };
+        if df.height() < self.batch_size.into() {
+            self.batch_size =
+                NonZeroUsize::new(df.height()).unwrap_or(NonZeroUsize::new(1).unwrap());
+        }
         for dfs in df
             .to_owned()
             .split_chunks_by_n(self.batch_size.into(), true)
