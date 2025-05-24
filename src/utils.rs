@@ -3,15 +3,18 @@ use crate::pl_sql::{SqliteColOption, SqliteDataType, SqliteSchema};
 use crate::unzip::extract_zip;
 use crate::xlxs_to_pl::ExcelReader;
 use calamine::{open_workbook, Reader, Xlsx};
+use futures::future::join;
 use polars::prelude::*;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::env;
+use std::fs;
 use std::fs::create_dir_all;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::thread::{self, JoinHandle};
+use tokio::runtime::Runtime;
 pub async fn download_urls(urls: Vec<&str>, dir: &Path) -> Result<(), color_eyre::eyre::Error> {
     create_dir_all(dir).expect("No se pudo crear la carpeta");
     for url in urls {
@@ -159,7 +162,7 @@ pub fn get_schema_sql<P: AsRef<Path>>(path: P) -> Result<SqliteSchema, color_eyr
                 column.clone(),
                 SqliteColOption::default()
                     .with_type_sql(SqliteDataType::INTEGER)
-                    .foreign_key(id_ref, column),
+                    .foreign_key(id_ref, "CLAVE".into()),
             );
         } else {
             schema.with_column(
@@ -221,4 +224,56 @@ pub fn clean_data_covid(df: LazyFrame) -> LazyFrame {
             .then(lit(NULL))
             .otherwise(col("FECHA_DEF")),
     ])
+}
+pub fn is_dir_empty<P: AsRef<Path>>(path: P) -> std::io::Result<bool> {
+    let mut entries = fs::read_dir(path)?;
+    Ok(entries.next().is_none())
+}
+pub fn get_all_data(
+    dir_csv: &'static Path,
+    dir_dicc: &Path,
+) -> Result<(), color_eyre::eyre::Error> {
+    // Declaramos los url con que se van a descargar
+    let urls = vec![
+        "https://datosabiertos.salud.gob.mx/gobmx/salud/datos_abiertos/historicos/2020/COVID19MEXICO2020.zip",
+        "https://datosabiertos.salud.gob.mx/gobmx/salud/datos_abiertos/historicos/2021/COVID19MEXICO2021.zip",
+        "https://datosabiertos.salud.gob.mx/gobmx/salud/datos_abiertos/historicos/2022/COVID19MEXICO2022.zip",
+        "https://datosabiertos.salud.gob.mx/gobmx/salud/datos_abiertos/historicos/2023/COVID19MEXICO2023.zip",
+     ]; // add more urls as you need
+        // Declaramos la carpeta donde se van a descargar
+    let dir_zip_files = Path::new("data_zip");
+    let rt = Runtime::new().unwrap();
+    let url_dicc = "https://datosabiertos.salud.gob.mx/gobmx/salud/datos_abiertos/diccionario_datos_abiertos.zip";
+    let dir_dicc_zip = Path::new("dicc_zip");
+    create_dir_all(dir_dicc_zip).expect("No se pudo crear la carpeta");
+    let path_file_zip_dicc = env::current_dir()
+        .unwrap()
+        .join(dir_dicc_zip)
+        .join(Path::new(url_dicc).file_name().unwrap());
+    // descargamos los archivos
+    let _ = rt.block_on(join(
+        download_urls(urls, dir_zip_files),
+        download_file(url_dicc, &path_file_zip_dicc),
+    ));
+    let mut zip_files = Vec::new();
+    for entry in fs::read_dir(dir_zip_files)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let file = dir_zip_files.join(name).to_string_lossy().to_string();
+        zip_files.push(to_str(file));
+    }
+    // los descomprimimos en una carpeta a parte
+    unzip_data(zip_files, dir_csv)?;
+    for entry in fs::read_dir(dir_dicc_zip)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() {
+            if let Some(ext) = path.extension() {
+                if ext == "zip" {
+                    extract_zip(path.to_str().unwrap(), dir_dicc)?;
+                }
+            }
+        }
+    }
+    Ok(())
 }

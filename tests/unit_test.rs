@@ -187,7 +187,8 @@ fn test_get_schema_pl() {
 #[test]
 #[ignore = "ok"]
 fn test_get_schema_sql() {
-    let path_schema = "/home/luish/Documentos/Proyects/Rust/db_cov19mx/diccionario_datos_abiertos/240708 Descriptores_.xlsx";
+    let path_schema =
+        "/home/luish/Documentos/Proyects/Rust/db_cov19mx/data_dicc/240708 Descriptores_.xlsx";
     let mut schema = get_schema_sql(path_schema).unwrap();
     let qry = schema.finish("test");
     println!("{qry}");
@@ -195,7 +196,7 @@ fn test_get_schema_sql() {
     panic!()
 }
 #[test]
-// #[ignore = "ok"]
+#[ignore = "ok"]
 fn test_tables_to_sql() -> Result<(), color_eyre::eyre::Error> {
     let path = "/home/luish/Documentos/Proyects/Rust/db_cov19mx/data_dicc/240708 Catalogos.xlsx";
     let dfs = get_df_cat(path)?;

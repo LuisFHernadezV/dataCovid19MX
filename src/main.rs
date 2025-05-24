@@ -1,65 +1,17 @@
-use db_cov19mx::download::download_file;
 use db_cov19mx::pl_sql::*;
-use db_cov19mx::unzip::extract_zip;
 use db_cov19mx::utils::*;
-use futures::future::join;
 use polars::prelude::*;
-use std::env;
 use std::fs;
-use std::fs::create_dir_all;
 use std::num::NonZeroUsize;
 use std::path::Path;
-use tokio::runtime::Runtime;
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
-    // Declaramos los url con que se van a descargar
-    let urls = vec![
-        "https://datosabiertos.salud.gob.mx/gobmx/salud/datos_abiertos/historicos/2020/COVID19MEXICO2020.zip",
-        "https://datosabiertos.salud.gob.mx/gobmx/salud/datos_abiertos/historicos/2021/COVID19MEXICO2021.zip",
-        "https://datosabiertos.salud.gob.mx/gobmx/salud/datos_abiertos/historicos/2022/COVID19MEXICO2022.zip",
-        "https://datosabiertos.salud.gob.mx/gobmx/salud/datos_abiertos/historicos/2023/COVID19MEXICO2023.zip",
-     ]; // add more urls as you need
-        // Declaramos la carpeta donde se van a descargar
-    let dir_zip_files = Path::new("data_zip");
-    let rt = Runtime::new().unwrap();
-    let url_dicc = "https://datosabiertos.salud.gob.mx/gobmx/salud/datos_abiertos/diccionario_datos_abiertos.zip";
-    let dir_dicc_zip = Path::new("dicc_zip");
-    create_dir_all(dir_dicc_zip).expect("No se pudo crear la carpeta");
-    let path_file_zip_dicc = env::current_dir()
-        .unwrap()
-        .join(dir_dicc_zip)
-        .join(Path::new(url_dicc).file_name().unwrap());
-    // descargamos los archivos
-    let _ = rt.block_on(join(
-        download_urls(urls, dir_zip_files),
-        download_file(url_dicc, &path_file_zip_dicc),
-    ));
-    // optenemos los archivos descargados
-    let mut zip_files = Vec::new();
-    for entry in fs::read_dir(dir_zip_files)? {
-        let entry = entry?;
-        let name = entry.file_name();
-        let file = dir_zip_files.join(name).to_string_lossy().to_string();
-        zip_files.push(to_str(file));
-    }
-    // los descomprimimos en una carpeta a parte
     let dir_csv = Path::new("data_csv");
-    unzip_data(zip_files, dir_csv)?;
     let dir_dicc = Path::new("data_dicc");
-    for entry in fs::read_dir(dir_dicc_zip)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_file() {
-            if let Some(ext) = path.extension() {
-                if ext == "zip" {
-                    extract_zip(path.to_str().unwrap(), dir_dicc)?;
-                }
-            }
-        }
+    if is_dir_empty(dir_csv)? || is_dir_empty(dir_dicc)? {
+        get_all_data(dir_csv, dir_dicc)?;
     }
-    // En base a los descriptores obtenemos el esquema que tendrá el dataframe
-    // final
     let file_des = dir_dicc.join("240708 Descriptores_.xlsx");
     let schema = get_schema_pl(&file_des)?;
     // Creamos un vector con los archivos csv que seran leidos
@@ -73,7 +25,7 @@ fn main() -> color_eyre::Result<()> {
         .with_has_header(true)
         .with_dtype_overwrite(Some(schema))
         .finish()?;
-    // Leemose el arcchivo que contiene todas las tablas con las que
+    // Leemos el archivo que contiene todas las tablas con las que
     // se reelacionará la tabla final
     let file_cat = dir_dicc.join("240708 Catalogos.xlsx");
     let mut tables_cat = get_df_cat(file_cat)?;
