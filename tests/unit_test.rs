@@ -3,7 +3,8 @@ use db_cov19mx::download::download_file;
 use db_cov19mx::pl_sql::*;
 use db_cov19mx::unzip::extract_zip;
 use db_cov19mx::utils::{
-    download_urls, get_df_cat, get_schema_pl, get_schema_sql, get_unique_contry, unzip_data,
+    download_urls, get_df_cat, get_schema_pl, get_schema_sql, get_unique_contry, trim_cols,
+    unzip_data,
 };
 use db_cov19mx::xlxs_to_pl::ExcelReader;
 use polars::prelude::*;
@@ -160,7 +161,7 @@ fn test_unique_contry() -> PolarsResult<()> {
 #[test]
 #[ignore = "ok"]
 fn test_get_df_cat() -> Result<(), color_eyre::eyre::Error> {
-    let path = "/home/luish/Documentos/Proyects/Rust/db_cov19mx/diccionario_datos_abiertos/240708 Catalogos.xlsx";
+    let path = "/home/luish/Documentos/Proyects/Rust/db_cov19mx/data_dicc/240708 Catalogos.xlsx";
     let dfs = get_df_cat(path)?;
     for (sheet, df) in dfs {
         println!("{sheet}");
@@ -196,7 +197,7 @@ fn test_get_schema_sql() {
     panic!()
 }
 #[test]
-#[ignore = "ok"]
+// #[ignore = "ok"]
 fn test_tables_to_sql() -> Result<(), color_eyre::eyre::Error> {
     let path = "/home/luish/Documentos/Proyects/Rust/db_cov19mx/data_dicc/240708 Catalogos.xlsx";
     let dfs = get_df_cat(path)?;
@@ -211,6 +212,17 @@ fn test_tables_to_sql() -> Result<(), color_eyre::eyre::Error> {
     let sql_write = SqlWriter::new("test.db")?;
 
     for (table_name, mut df) in dfs {
+        df = df
+            .clone()
+            .lazy()
+            .with_columns(
+                df.get_columns()
+                    .iter()
+                    .filter(|s| s.dtype() == &DataType::String)
+                    .map(trim_cols)
+                    .collect::<Vec<_>>(),
+            )
+            .collect()?;
         sql_write
             .clone()
             .with_schema(Some(schema_des.clone()))
@@ -218,7 +230,7 @@ fn test_tables_to_sql() -> Result<(), color_eyre::eyre::Error> {
             .with_table(Some(table_name))
             .finish(&mut df)?;
     }
-    panic!()
+    Ok(())
 }
 #[test]
 #[ignore = "ok"]
@@ -243,4 +255,27 @@ fn test_big_table_insert() -> Result<(), color_eyre::eyre::Error> {
     println!("Duración de finish: {:.2?}", duration);
     assert!(duration.as_secs_f64() < 2.0);
     Ok(())
+}
+#[test]
+#[ignore = "ok"]
+fn test_cols_trim() -> Result<(), color_eyre::eyre::Error> {
+    let path = "/home/luish/Documentos/Proyects/Rust/db_cov19mx/data_dicc/240708 Catalogos.xlsx";
+    let dfs = get_df_cat(path)?;
+    for (sheet, mut df) in dfs {
+        println!("{df}");
+        df = df
+            .clone()
+            .lazy()
+            .with_columns(
+                df.get_columns()
+                    .iter()
+                    .filter(|s| s.dtype() == &DataType::String)
+                    .map(trim_cols)
+                    .collect::<Vec<_>>(),
+            )
+            .collect()?;
+        println!("{sheet}");
+        println!("{df}");
+    }
+    panic!()
 }

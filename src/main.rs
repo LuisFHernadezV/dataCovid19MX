@@ -41,6 +41,18 @@ fn main() -> color_eyre::Result<()> {
     tables_cat.insert("PAISES".into(), df_contrys.collect()?);
     let sql_write = SqlWriter::new("db_cov19mx.db")?;
     for (table_name, mut df) in tables_cat {
+        df = df
+            .clone()
+            .lazy()
+            .with_columns(
+                df.get_columns()
+                    .iter()
+                    .filter(|s| s.dtype() == &DataType::String)
+                    .map(trim_cols)
+                    .collect::<Vec<_>>(),
+            )
+            .collect()?;
+
         sql_write
             .clone()
             .with_schema(Some(schema_des.clone()))

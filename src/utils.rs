@@ -192,7 +192,9 @@ pub fn get_unique_contry(df: &LazyFrame, col_name: &str, id_name: &str) -> Polar
         .select([hash_column(col(col_name)).alias(id_name), col(col_name)])
         .unique_stable(None, UniqueKeepStrategy::First))
 }
-
+pub fn trim_cols(column: &Column) -> Expr {
+    col(column.name().as_str()).str().strip_chars(lit(" "))
+}
 pub fn clean_data_covid(df: LazyFrame) -> LazyFrame {
     df.with_columns(vec![
         concat_str(

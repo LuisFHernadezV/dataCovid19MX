@@ -350,14 +350,19 @@ impl SqlWriter {
                                     "0".to_string()
                                 }
                             }
-                            AnyValue::String(v) => format!("'{}'", v.replace("'", "''")),
+                            AnyValue::String(v) => {
+                                format!("'{}'", v.trim_matches('\"').replace("'", "''"))
+                            }
                             AnyValue::Int8(v) => v.to_string(),
                             AnyValue::Int16(v) => v.to_string(),
                             AnyValue::Int32(v) => v.to_string(),
                             AnyValue::Int128(v) => v.to_string(),
                             AnyValue::Float64(v) => v.to_string(),
                             AnyValue::Decimal(i, d) => format!("{}.{}", i, d),
-                            _ => format!("'{}'", value.to_string().replace("'", "''")),
+                            _ => format!(
+                                "'{}'",
+                                value.to_string().trim_matches('\"').replace("'", "''")
+                            ),
                         })
                         .collect::<Vec<String>>()
                         .join(","),
