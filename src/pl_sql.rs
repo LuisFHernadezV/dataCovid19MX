@@ -222,6 +222,7 @@ pub struct SqlWriter {
     if_exists: IfExistsOption,
     index: bool,
     parallel: bool,
+    strict_insert: bool,
     batch_size: NonZeroUsize,
     index_label: Option<String>,
     schema: Option<SqliteSchema>,
@@ -239,6 +240,7 @@ impl SqlWriter {
             index: true,
             parallel: true,
             batch_size: NonZeroUsize::new(1024).unwrap(),
+            strict_insert: true,
             index_label: None,
             table_name: None,
             schema: None,
@@ -276,6 +278,10 @@ impl SqlWriter {
         self.parallel = parallel;
         self
     }
+    pub fn with_strict_insert(mut self, strict: bool) -> Self {
+        self.strict_insert = strict;
+        self
+    }
     pub fn finish(&mut self, df: &mut DataFrame) -> Result<(), color_eyre::eyre::Error> {
         // Delete table and if create the schema
         let table_name = match self.table_name.as_ref() {
@@ -311,6 +317,7 @@ impl SqlWriter {
                 }
             }
         }
+        self.schema = Some(schema.clone());
         let qry = schema.finish(&table_name);
         match self.if_exists {
             IfExistsOption::Append => {}
@@ -356,7 +363,13 @@ impl SqlWriter {
                             AnyValue::Int8(v) => v.to_string(),
                             AnyValue::Int16(v) => v.to_string(),
                             AnyValue::Int32(v) => v.to_string(),
+                            AnyValue::Int64(v) => v.to_string(),
                             AnyValue::Int128(v) => v.to_string(),
+                            AnyValue::UInt8(v) => v.to_string(),
+                            AnyValue::UInt16(v) => v.to_string(),
+                            AnyValue::UInt32(v) => v.to_string(),
+                            AnyValue::UInt64(v) => v.to_string(),
+                            AnyValue::Float32(v) => v.to_string(),
                             AnyValue::Float64(v) => v.to_string(),
                             AnyValue::Decimal(i, d) => format!("{}.{}", i, d),
                             _ => format!(
@@ -386,12 +399,21 @@ impl SqlWriter {
                     row_sql.push(format!("({})", row));
                 }
             }
-            let full_insert = format!(
-                "INSERT INTO {} ({}) VALUES {}",
-                table_name,
-                dfs.get_column_names_str().join(","),
-                row_sql.join(",")
-            );
+            let full_insert = if self.strict_insert {
+                format!(
+                    "INSERT INTO {} ({}) VALUES {}",
+                    table_name,
+                    dfs.get_column_names_str().join(","),
+                    row_sql.join(",")
+                )
+            } else {
+                format!(
+                    "INSERT OR IGNORE INTO {} ({}) VALUES {}",
+                    table_name,
+                    dfs.get_column_names_str().join(","),
+                    row_sql.join(",")
+                )
+            };
             rt.block_on(sqlx::query(&full_insert).execute(&self.pool))?;
         }
 

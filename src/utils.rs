@@ -140,14 +140,12 @@ pub fn get_schema_sql<P: AsRef<Path>>(path: P) -> Result<SqliteSchema, color_eyr
     let df = ExcelReader::new(path)?.finish()?;
     let col_name = df.clone().column("NOMBRE DE VARIABLE")?.clone();
     let col_type = df.clone().column("FORMATO O FUENTE")?.clone();
-    let mut schema = SqliteSchema::new(
-        "ID_REGISTRO",
-        SqliteColOption::default().with_primary_key(true),
-    );
+    let mut schema: SqliteSchema =
+        SqliteSchema::new("FECHA_ACTUALIZACION", SqliteColOption::default());
     for (col, typ) in col_name
         .phys_iter()
-        .skip(1)
-        .zip(col_type.phys_iter().skip(1))
+        .skip(2)
+        .zip(col_type.phys_iter().skip(2))
     {
         let column = col.str_value().to_string();
         let type_col = typ.str_value().to_string();
@@ -171,7 +169,15 @@ pub fn get_schema_sql<P: AsRef<Path>>(path: P) -> Result<SqliteSchema, color_eyr
             );
         }
     }
+    schema.with_column(
+        "EDAD",
+        SqliteColOption::default().with_type_sql(SqliteDataType::INTEGER),
+    );
 
+    schema.with_column(
+        "ID_REGISTRO",
+        SqliteColOption::default().with_primary_key(true),
+    );
     Ok(schema)
 }
 pub fn get_unique_contry(df: &LazyFrame, col_name: &str, id_name: &str) -> PolarsResult<LazyFrame> {
@@ -226,6 +232,7 @@ pub fn clean_data_covid(df: LazyFrame) -> LazyFrame {
             .then(lit(NULL))
             .otherwise(col("FECHA_DEF")),
     ])
+    .select([all().exclude(["literal"])])
 }
 pub fn is_dir_empty<P: AsRef<Path>>(path: P) -> std::io::Result<bool> {
     let mut entries = fs::read_dir(path)?;

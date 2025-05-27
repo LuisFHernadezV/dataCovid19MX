@@ -3,12 +3,13 @@ use db_cov19mx::download::download_file;
 use db_cov19mx::pl_sql::*;
 use db_cov19mx::unzip::extract_zip;
 use db_cov19mx::utils::{
-    download_urls, get_df_cat, get_schema_pl, get_schema_sql, get_unique_contry, trim_cols,
-    unzip_data,
+    clean_data_covid, download_urls, get_df_cat, get_schema_pl, get_schema_sql, get_unique_contry,
+    trim_cols, unzip_data,
 };
 use db_cov19mx::xlxs_to_pl::ExcelReader;
 use polars::prelude::*;
 use std::env;
+use std::fs;
 use std::fs::create_dir_all;
 use std::num::NonZeroUsize;
 use std::path::Path;
@@ -197,7 +198,7 @@ fn test_get_schema_sql() {
     panic!()
 }
 #[test]
-// #[ignore = "ok"]
+#[ignore = "ok"]
 fn test_tables_to_sql() -> Result<(), color_eyre::eyre::Error> {
     let path = "/home/luish/Documentos/Proyects/Rust/db_cov19mx/data_dicc/240708 Catalogos.xlsx";
     let dfs = get_df_cat(path)?;
@@ -278,4 +279,103 @@ fn test_cols_trim() -> Result<(), color_eyre::eyre::Error> {
         println!("{df}");
     }
     panic!()
+}
+#[test]
+// #[ignore = "reason"]
+fn data_unique() -> Result<(), color_eyre::eyre::Error> {
+    let dir_csv = Path::new("data_csv");
+    let mut files_data = Vec::new();
+    for entry in fs::read_dir(dir_csv)? {
+        let entry = entry?;
+        let file = dir_csv.join(entry.file_name());
+        files_data.push(file);
+    }
+    let mut lf = LazyCsvReader::new_paths(files_data.into())
+        .with_has_header(true)
+        .with_infer_schema_length(Some(10000))
+        .with_n_rows(Some(1_000_000))
+        .finish()?;
+    lf = clean_data_covid(lf);
+    let not_colum = [
+        "ID_REGISTRO",
+        "FECHA_ACTUALIZACION",
+        "FECHA_INGRESO",
+        "FECHA_SINTOMAS",
+        "FECHA_DEF",
+        "EDAD",
+    ];
+
+    for name in lf.clone().collect()?.get_column_names() {
+        if !not_colum.contains(&name.as_str()) {
+            let mut file = fs::File::create(format!("{}.csv", name))?;
+            let mut uniq_value = lf.clone().select([col(name.as_str()).unique()]).collect()?;
+            println!("{}", uniq_value);
+            CsvWriter::new(&mut file)
+                .include_header(true)
+                .with_separator(b',')
+                .finish(&mut uniq_value)?;
+        }
+    }
+    panic!()
+}
+#[test]
+#[ignore = "reason"]
+fn test_load_data_covid() -> Result<(), color_eyre::eyre::Error> {
+    let dir_dicc = Path::new("/home/luish/Documentos/Proyects/Rust/db_cov19mx/data_dicc");
+    let dir_csv = Path::new("/home/luish/Documentos/Proyects/Rust/db_cov19mx/data_csv");
+    let file_des = dir_dicc.join("240708 Descriptores_.xlsx");
+    let mut schema_sql = get_schema_sql(file_des)?;
+    schema_sql.with_column(
+        "PAIS_NACIONALIDAD",
+        SqliteColOption::default()
+            .with_type_sql(SqliteDataType::INTEGER)
+            .foreign_key("PAISES", "CLAVE"),
+    );
+    schema_sql.with_column(
+        "PAIS_ORIGEN",
+        SqliteColOption::default()
+            .with_type_sql(SqliteDataType::INTEGER)
+            .foreign_key("PAISES", "CLAVE"),
+    );
+    let mut files_data = Vec::new();
+    for entry in fs::read_dir(dir_csv)? {
+        let entry = entry?;
+        let file = dir_csv.join(entry.file_name());
+        files_data.push(file);
+    }
+    let file_des = dir_dicc.join("240708 Descriptores_.xlsx");
+    let schema = get_schema_pl(&file_des)?;
+
+    let sql_write = SqlWriter::new("db_cov19mx.db")?;
+    let mut lf = LazyCsvReader::new_paths(files_data.clone().into())
+        .with_has_header(true)
+        .with_dtype_overwrite(Some(schema.clone()))
+        .with_n_rows(Some(2_230))
+        .finish()?;
+    lf = clean_data_covid(lf);
+    let by = 1;
+    for n in (2_220..lf.clone().collect()?.height()).step_by(by) {
+        println!("{}", n);
+        let mut df = lf.clone().slice(n as i64, by as u32).collect()?;
+        let res = sql_write
+            .clone()
+            .with_schema(Some(schema_sql.clone()))
+            .with_table(Some("COVID19MEXICO".to_string()))
+            .if_exists(IfExistsOption::Replace)
+            .with_strict_insert(false)
+            .with_index(false)
+            .finish(&mut df);
+        if res.is_err() {
+            let mut file = fs::File::create("error.csv")?;
+            eprintln!("Error en el indice {} df: {}", n, df);
+            CsvWriter::new(&mut file)
+                .include_header(true)
+                .with_separator(b',')
+                .finish(&mut df)?;
+
+            return res;
+        }
+    }
+
+    Ok(())
 }

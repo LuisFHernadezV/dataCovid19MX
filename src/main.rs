@@ -83,13 +83,15 @@ fn main() -> color_eyre::Result<()> {
             let mut i = n;
             let mut df = lf.clone().slice(0, i as u32).collect()?;
             while !df.is_empty() {
-                sql_write
+                let _ = sql_write
                     .clone()
                     .with_schema(Some(schema_sql.clone()))
                     .with_table(Some("COVID19MEXICO".to_string()))
-                    .with_batch_size(NonZeroUsize::new(200_000).unwrap())
+                    .with_batch_size(NonZeroUsize::new(300_000).unwrap())
+                    .if_exists(IfExistsOption::Append)
+                    .with_strict_insert(false)
                     .with_index(false)
-                    .finish(&mut df)?;
+                    .finish(&mut df);
                 i += n;
                 df = lf.clone().slice(i as i64, (i + n) as u32).collect()?;
             }
@@ -98,11 +100,12 @@ fn main() -> color_eyre::Result<()> {
                 .with_schema(Some(schema_sql.clone()))
                 .with_table(Some("COVID19MEXICO".to_string()))
                 .with_batch_size(NonZeroUsize::new(200_000).unwrap())
+                .if_exists(IfExistsOption::Replace)
                 .with_index(false)
                 .finish(&mut lf.collect()?)?;
         }
         Ok(())
     };
-    split_lf(Some(1_000_000))?;
+    split_lf(Some(1_200_000))?;
     Ok(())
 }
