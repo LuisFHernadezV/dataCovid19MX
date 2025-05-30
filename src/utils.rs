@@ -230,9 +230,9 @@ pub fn clean_data_covid(df: LazyFrame) -> LazyFrame {
         .alias("PAIS_ORIGEN"),
         when(col("FECHA_DEF").eq(lit("9999-99-99")))
             .then(lit(NULL))
-            .otherwise(col("FECHA_DEF")),
+            .otherwise(col("FECHA_DEF"))
+            .alias("FECHA_DEF"),
     ])
-    .select([all().exclude(["literal"])])
 }
 pub fn is_dir_empty<P: AsRef<Path>>(path: P) -> std::io::Result<bool> {
     let mut entries = fs::read_dir(path)?;
