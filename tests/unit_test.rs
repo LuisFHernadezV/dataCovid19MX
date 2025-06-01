@@ -231,7 +231,7 @@ fn test_tables_to_sql() -> Result<(), color_eyre::eyre::Error> {
             .with_table(Some(table_name))
             .finish(&mut df)?;
     }
-    Ok(())
+    panic!()
 }
 #[test]
 #[ignore = "ok"]
@@ -281,7 +281,7 @@ fn test_cols_trim() -> Result<(), color_eyre::eyre::Error> {
     panic!()
 }
 #[test]
-// #[ignore = "reason"]
+#[ignore = "reason"]
 fn data_unique() -> Result<(), color_eyre::eyre::Error> {
     let dir_csv = Path::new("data_csv");
     let mut files_data = Vec::new();
@@ -319,7 +319,7 @@ fn data_unique() -> Result<(), color_eyre::eyre::Error> {
     panic!()
 }
 #[test]
-#[ignore = "reason"]
+// #[ignore = "reason"]
 fn test_load_data_covid() -> Result<(), color_eyre::eyre::Error> {
     let dir_dicc = Path::new("/home/luish/Documentos/Proyects/Rust/db_cov19mx/data_dicc");
     let dir_csv = Path::new("/home/luish/Documentos/Proyects/Rust/db_cov19mx/data_csv");
@@ -354,6 +354,29 @@ fn test_load_data_covid() -> Result<(), color_eyre::eyre::Error> {
         .finish()?;
     lf = clean_data_covid(lf);
     let by = 1;
+    let file_cat = dir_dicc.join("240708 Catalogos.xlsx");
+    let tables_cat = get_df_cat(file_cat)?;
+    let mun_uniques: Vec<_> = tables_cat
+        .get("MUNICIPIOS")
+        .unwrap()
+        .column("CLAVE")?
+        .as_series()
+        .unwrap()
+        .iter()
+        .map(|s| s.str_value().parse().unwrap())
+        .collect();
+    let is_in_mun = |exp: Expr| -> Expr {
+        exp.map(
+            move |c: Column| -> PolarsResult<Option<Column>> {
+                let out: BooleanChunked = c
+                    .u64()?
+                    .apply_nonnull_values_generic(DataType::Boolean, |x| mun_uniques.contains(&x));
+                Ok(Some(out.into_column()))
+            },
+            GetOutput::from_type(DataType::Boolean),
+        )
+    };
+    lf = lf.filter(is_in_mun(col("MUNICIPIO_RES")));
     for n in (2_220..lf.clone().collect()?.height()).step_by(by) {
         println!("{}", n);
         let mut df = lf.clone().slice(n as i64, by as u32).collect()?;

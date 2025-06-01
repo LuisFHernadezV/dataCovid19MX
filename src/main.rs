@@ -9,7 +9,13 @@ fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
     let dir_csv = Path::new("data_csv");
     let dir_dicc = Path::new("data_dicc");
-    if is_dir_empty(dir_csv)? || is_dir_empty(dir_dicc)? {
+    if !dir_csv.exists()
+        || !dir_csv.is_dir()
+        || is_dir_empty(dir_csv)?
+        || !dir_dicc.exists()
+        || !dir_dicc.is_dir()
+        || is_dir_empty(dir_dicc)?
+    {
         get_all_data(dir_csv, dir_dicc)?;
     }
     let file_des = dir_dicc.join("240708 Descriptores_.xlsx");
@@ -40,7 +46,7 @@ fn main() -> color_eyre::Result<()> {
     let df_contrys = get_unique_contry(&lf, "PAIS", "CLAVE")?;
     tables_cat.insert("PAISES".into(), df_contrys.collect()?);
     let sql_write = SqlWriter::new("db_cov19mx.db")?;
-    for (table_name, mut df) in tables_cat {
+    for (table_name, mut df) in tables_cat.clone() {
         df = df
             .clone()
             .lazy()
@@ -76,24 +82,48 @@ fn main() -> color_eyre::Result<()> {
     //limpiamos la data cambiando las columnas de los paises por sus hashmap y ademas hacemos unos
     // cambios en la columna de las entidades que nos perimtan mapear bien las dos tablas
     lf = clean_data_covid(lf);
+    let mun_uniques: Vec<_> = tables_cat
+        .get("MUNICIPIOS")
+        .unwrap()
+        .column("CLAVE")
+        .unwrap()
+        .as_series()
+        .unwrap()
+        .iter()
+        .map(|s| s.str_value().parse().unwrap())
+        .collect();
+    let is_in_mun = |exp: Expr| -> Expr {
+        exp.map(
+            move |c: Column| -> PolarsResult<Option<Column>> {
+                let out: BooleanChunked = c
+                    .u64()?
+                    .apply_nonnull_values_generic(DataType::Boolean, |x| mun_uniques.contains(&x));
+                Ok(Some(out.into_column()))
+            },
+            GetOutput::from_type(DataType::Boolean),
+        )
+    };
+    lf = lf.filter(is_in_mun(col("MUNICIPIO_RES")));
     // Creamos una función que divide la data en lotes para hacerlo menos pesado con la opcion de
     // poder hacerlo todo en una vez lo cual requiere mas recursos computacionales.
-    let split_lf = |n: Option<u64>| -> color_eyre::Result<()> {
+    let split_lf = |n: Option<u32>| -> color_eyre::Result<()> {
         if let Some(n) = n {
-            let mut i = n;
-            let mut df = lf.clone().slice(0, i as u32).collect()?;
+            let mut offset = 0;
+            let mut df = lf.clone().slice(offset, n).collect()?;
             while !df.is_empty() {
-                let _ = sql_write
+                sql_write
                     .clone()
                     .with_schema(Some(schema_sql.clone()))
                     .with_table(Some("COVID19MEXICO".to_string()))
-                    .with_batch_size(NonZeroUsize::new(300_000).unwrap())
+                    .with_batch_size(NonZeroUsize::new(25_000).unwrap())
                     .if_exists(IfExistsOption::Append)
                     .with_strict_insert(false)
                     .with_index(false)
-                    .finish(&mut df);
-                i += n;
-                df = lf.clone().slice(i as i64, (i + n) as u32).collect()?;
+                    .finish(&mut df)?;
+                offset += n as i64;
+                println!("{offset} Registros insertados");
+                df = lf.clone().slice(offset, n).collect()?;
+                println!("{}", df.height());
             }
         } else {
             sql_write
@@ -106,6 +136,6 @@ fn main() -> color_eyre::Result<()> {
         }
         Ok(())
     };
-    split_lf(Some(1_200_000))?;
+    split_lf(Some(100_000))?;
     Ok(())
 }

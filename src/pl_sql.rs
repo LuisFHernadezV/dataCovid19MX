@@ -1,8 +1,11 @@
-use color_eyre::eyre::Ok;
 use indexmap::IndexMap;
+use num_cpus;
 use polars::prelude::*;
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::sqlite::SqlitePool;
+use sqlx::sqlite::SqlitePoolOptions;
+use sqlx::Pool;
+use sqlx::Sqlite;
 use std::num::NonZeroUsize;
 use std::path::Path;
 use tokio::runtime::Runtime;
@@ -217,11 +220,12 @@ pub enum IfExistsOption {
 
 #[derive(Clone)]
 pub struct SqlWriter {
-    pool: SqlitePool,
+    pool: Arc<SqlitePool>,
     table_name: Option<String>,
     if_exists: IfExistsOption,
     index: bool,
     parallel: bool,
+    n_threads: usize,
     strict_insert: bool,
     batch_size: NonZeroUsize,
     index_label: Option<String>,
@@ -230,10 +234,18 @@ pub struct SqlWriter {
 impl SqlWriter {
     pub fn new<P: AsRef<Path>>(db_url: P) -> Result<Self, color_eyre::eyre::Error> {
         let rt = Runtime::new()?;
+        let n_threads = num_cpus::get();
         let options = SqliteConnectOptions::new()
             .filename(db_url)
+            .busy_timeout(std::time::Duration::from_secs(10))
             .create_if_missing(true);
-        let pool = rt.block_on(SqlitePool::connect_with(options))?;
+        let pool = Arc::new(
+            rt.block_on(
+                SqlitePoolOptions::new()
+                    .max_connections(n_threads as u32)
+                    .connect_with(options),
+            )?,
+        );
         Ok(SqlWriter {
             pool,
             if_exists: IfExistsOption::default(),
@@ -241,6 +253,21 @@ impl SqlWriter {
             parallel: true,
             batch_size: NonZeroUsize::new(1024).unwrap(),
             strict_insert: true,
+            n_threads,
+            index_label: None,
+            table_name: None,
+            schema: None,
+        })
+    }
+    pub fn new_from_pool(pool: Pool<Sqlite>) -> Result<Self, color_eyre::eyre::Error> {
+        Ok(SqlWriter {
+            pool: Arc::new(pool),
+            if_exists: IfExistsOption::default(),
+            index: true,
+            parallel: true,
+            batch_size: NonZeroUsize::new(1024).unwrap(),
+            strict_insert: true,
+            n_threads: num_cpus::get(),
             index_label: None,
             table_name: None,
             schema: None,
@@ -282,6 +309,11 @@ impl SqlWriter {
         self.strict_insert = strict;
         self
     }
+    pub fn n_threads(mut self, n_threads: usize) -> Self {
+        self.n_threads = n_threads;
+        self
+    }
+
     pub fn finish(&mut self, df: &mut DataFrame) -> Result<(), color_eyre::eyre::Error> {
         // Delete table and if create the schema
         let table_name = match self.table_name.as_ref() {
@@ -324,7 +356,7 @@ impl SqlWriter {
             IfExistsOption::Replace => {
                 rt.block_on(
                     sqlx::query(&format!("DROP TABLE IF EXISTS {}", table_name))
-                        .execute(&self.pool),
+                        .execute(&*self.pool),
                 )?;
             }
             IfExistsOption::Fail => {
@@ -336,87 +368,122 @@ impl SqlWriter {
                 let rows = rt.block_on(
                     sqlx::query("SELECT name FROM sqlite_master WHERE name = ?")
                         .bind(&table)
-                        .fetch_all(&self.pool),
+                        .fetch_all(&*self.pool),
                 )?;
                 if !rows.is_empty() {
                     return Err(color_eyre::eyre::eyre!("Table {} already exists", table));
                 }
             }
         }
-        rt.block_on(sqlx::query(&qry).execute(&self.pool))?;
-        let generate_insert_qry = |row: Option<Vec<AnyValue>>| -> Option<String> {
-            match row {
-                Some(r) => Some(
-                    r.iter()
-                        .map(|value| match value {
-                            AnyValue::Null => "NULL".to_string(),
-                            AnyValue::Boolean(v) => {
-                                if *v {
-                                    "1".to_string()
-                                } else {
-                                    "0".to_string()
-                                }
-                            }
-                            AnyValue::String(v) => {
-                                format!("'{}'", v.trim_matches('\"').replace("'", "''"))
-                            }
-                            AnyValue::Int8(v) => v.to_string(),
-                            AnyValue::Int16(v) => v.to_string(),
-                            AnyValue::Int32(v) => v.to_string(),
-                            AnyValue::Int64(v) => v.to_string(),
-                            AnyValue::Int128(v) => v.to_string(),
-                            AnyValue::UInt8(v) => v.to_string(),
-                            AnyValue::UInt16(v) => v.to_string(),
-                            AnyValue::UInt32(v) => v.to_string(),
-                            AnyValue::UInt64(v) => v.to_string(),
-                            AnyValue::Float32(v) => v.to_string(),
-                            AnyValue::Float64(v) => v.to_string(),
-                            AnyValue::Decimal(i, d) => format!("{}.{}", i, d),
-                            _ => format!(
-                                "'{}'",
-                                value.to_string().trim_matches('\"').replace("'", "''")
-                            ),
-                        })
-                        .collect::<Vec<String>>()
-                        .join(","),
-                ),
-                None => None,
-            }
-        };
+        rt.block_on(sqlx::query(&qry).execute(&*self.pool))?;
         if df.height() < self.batch_size.into() {
-            self.batch_size =
-                NonZeroUsize::new(df.height()).unwrap_or(NonZeroUsize::new(1).unwrap());
+            self.batch_size = NonZeroUsize::new(1).unwrap();
         }
-        for dfs in df
-            .to_owned()
-            .split_chunks_by_n(self.batch_size.into(), true)
-        {
+        rt.block_on(insert_df(
+            df,
+            table_name,
+            self.batch_size.into(),
+            self.strict_insert,
+            self.n_threads,
+            self.parallel,
+            Arc::clone(&self.pool),
+        ))?;
+
+        Ok(())
+    }
+}
+
+async fn insert_df(
+    df: &mut DataFrame,
+    table_name: String,
+    batch_size: usize,
+    strict_insert: bool,
+    n_threads: usize,
+    parallel: bool,
+    pool: Arc<SqlitePool>,
+) -> Result<(), color_eyre::eyre::Error> {
+    let generate_insert_qry = |row: Option<Vec<AnyValue>>| -> Option<String> {
+        match row {
+            Some(r) => Some(
+                r.iter()
+                    .map(|value| match value {
+                        AnyValue::Null => "NULL".to_string(),
+                        AnyValue::Boolean(v) => {
+                            if *v {
+                                "1".to_string()
+                            } else {
+                                "0".to_string()
+                            }
+                        }
+                        AnyValue::String(v) => {
+                            format!("'{}'", v.trim_matches('\"').replace("'", "''"))
+                        }
+                        AnyValue::Int8(v) => v.to_string(),
+                        AnyValue::Int16(v) => v.to_string(),
+                        AnyValue::Int32(v) => v.to_string(),
+                        AnyValue::Int64(v) => v.to_string(),
+                        AnyValue::Int128(v) => v.to_string(),
+                        AnyValue::UInt8(v) => v.to_string(),
+                        AnyValue::UInt16(v) => v.to_string(),
+                        AnyValue::UInt32(v) => v.to_string(),
+                        AnyValue::UInt64(v) => v.to_string(),
+                        AnyValue::Float32(v) => v.to_string(),
+                        AnyValue::Float64(v) => v.to_string(),
+                        AnyValue::Decimal(i, d) => format!("{}.{}", i, d),
+                        _ => format!(
+                            "'{}'",
+                            value.to_string().trim_matches('\"').replace("'", "''")
+                        ),
+                    })
+                    .collect::<Vec<String>>()
+                    .join(","),
+            ),
+            None => None,
+        }
+    };
+    let len = df.height();
+    let mut n_rows_finished: usize = 0;
+    let insert = if strict_insert {
+        format!(
+            "INSERT INTO {} ({}) ",
+            table_name,
+            df.get_column_names_str().join(","),
+        )
+    } else {
+        format!(
+            "INSERT OR IGNORE INTO {} ({}) ",
+            table_name,
+            df.get_column_names_str().join(","),
+        )
+    };
+    while n_rows_finished < len {
+        let mut df = df.slice(n_rows_finished as i64, batch_size);
+        // the `series.iter` needs rechunked series.
+        // we don't do this on the whole as this probably needs much less rechunking
+        // so will be faster.
+        // and allows writing `pl.concat([df] * 100, rechunk=False).write_csv()` as the rechunk
+        // would go OOM
+        df.as_single_chunk();
+        if df.is_empty() {
+            break;
+        }
+
+        for dfc in df.split_chunks_by_n(n_threads, parallel) {
             let mut row_sql = Vec::new();
-            for i in 0..dfs.height() {
-                let row = dfs.get(i);
+            for i in 0..dfc.height() {
+                let row = dfc.get(i);
                 let row = generate_insert_qry(row);
                 if let Some(row) = row {
                     row_sql.push(format!("({})", row));
                 }
             }
-            let full_insert = if self.strict_insert {
-                format!(
-                    "INSERT INTO {} ({}) VALUES {}",
-                    table_name,
-                    dfs.get_column_names_str().join(","),
-                    row_sql.join(",")
-                )
-            } else {
-                format!(
-                    "INSERT OR IGNORE INTO {} ({}) VALUES {}",
-                    table_name,
-                    dfs.get_column_names_str().join(","),
-                    row_sql.join(",")
-                )
-            };
-            rt.block_on(sqlx::query(&full_insert).execute(&self.pool))?;
+            if dfc.is_empty() {
+                continue;
+            }
+            let full_insert = format!("{} VALUES {}", insert, row_sql.join(","));
+            sqlx::query(&full_insert).execute(&*pool).await?;
         }
-
-        Ok(())
+        n_rows_finished += batch_size;
     }
+    Ok(())
 }
