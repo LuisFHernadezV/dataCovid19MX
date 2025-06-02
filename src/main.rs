@@ -27,9 +27,9 @@ fn main() -> color_eyre::Result<()> {
         let file = dir_csv.join(entry.file_name());
         files_data.push(file);
     }
-    let mut lf = LazyCsvReader::new_paths(files_data.into())
+    let mut lf = LazyCsvReader::new_paths(files_data.clone().into())
         .with_has_header(true)
-        .with_dtype_overwrite(Some(schema))
+        .with_dtype_overwrite(Some(schema.clone()))
         .finish()?;
     // Leemos el archivo que contiene todas las tablas con las que
     // se reelacionará la tabla final
@@ -79,63 +79,70 @@ fn main() -> color_eyre::Result<()> {
             .with_type_sql(SqliteDataType::INTEGER)
             .foreign_key("PAISES", "CLAVE"),
     );
-    //limpiamos la data cambiando las columnas de los paises por sus hashmap y ademas hacemos unos
-    // cambios en la columna de las entidades que nos perimtan mapear bien las dos tablas
-    lf = clean_data_covid(lf);
-    let mun_uniques: Vec<_> = tables_cat
+    let mun_uniques = tables_cat
         .get("MUNICIPIOS")
         .unwrap()
         .column("CLAVE")
         .unwrap()
         .as_series()
-        .unwrap()
-        .iter()
-        .map(|s| s.str_value().parse().unwrap())
-        .collect();
-    let is_in_mun = |exp: Expr| -> Expr {
-        exp.map(
-            move |c: Column| -> PolarsResult<Option<Column>> {
-                let out: BooleanChunked = c
-                    .u64()?
-                    .apply_nonnull_values_generic(DataType::Boolean, |x| mun_uniques.contains(&x));
-                Ok(Some(out.into_column()))
-            },
-            GetOutput::from_type(DataType::Boolean),
-        )
-    };
-    lf = lf.filter(is_in_mun(col("MUNICIPIO_RES")));
-    // Creamos una función que divide la data en lotes para hacerlo menos pesado con la opcion de
-    // poder hacerlo todo en una vez lo cual requiere mas recursos computacionales.
-    let split_lf = |n: Option<u32>| -> color_eyre::Result<()> {
+        .unwrap();
+    let split_lf = |n: Option<u32>, lf: LazyFrame| -> color_eyre::Result<()> {
         if let Some(n) = n {
             let mut offset = 0;
             let mut df = lf.clone().slice(offset, n).collect()?;
             while !df.is_empty() {
+                //limpiamos la data cambiando las columnas de los paises por sus hashmap y ademas hacemos unos
+                // cambios en la columna de las entidades que nos perimtan mapear bien las dos tablas
+                // Creamos una función que divide la data en lotes para hacerlo menos pesado con la opcion de
+                // poder hacerlo todo en una vez lo cual requiere mas recursos computacionales.
+                df = clean_data_covid(df.lazy()).collect()?;
+                let mask = is_in(
+                    df.column("MUNICIPIO_RES")?.as_series().unwrap(),
+                    mun_uniques,
+                )?;
+                df = df.filter(&mask)?;
+                println!("Insertando {}", df.height());
                 sql_write
                     .clone()
                     .with_schema(Some(schema_sql.clone()))
                     .with_table(Some("COVID19MEXICO".to_string()))
-                    .with_batch_size(NonZeroUsize::new(25_000).unwrap())
+                    .with_batch_size(NonZeroUsize::new(80_000).unwrap())
                     .if_exists(IfExistsOption::Append)
                     .with_strict_insert(false)
                     .with_index(false)
                     .finish(&mut df)?;
                 offset += n as i64;
-                println!("{offset} Registros insertados");
+                println!("{offset} Registros recorridos");
                 df = lf.clone().slice(offset, n).collect()?;
-                println!("{}", df.height());
             }
         } else {
+            let mut df = lf.collect()?;
+            df = clean_data_covid(df.lazy()).collect()?;
+            let mask = is_in(
+                df.column("MUNICIPIO_RES")?.as_series().unwrap(),
+                mun_uniques,
+            )?;
+            df = df.filter(&mask)?;
             sql_write
+                .clone()
                 .with_schema(Some(schema_sql.clone()))
                 .with_table(Some("COVID19MEXICO".to_string()))
                 .with_batch_size(NonZeroUsize::new(200_000).unwrap())
                 .if_exists(IfExistsOption::Replace)
                 .with_index(false)
-                .finish(&mut lf.collect()?)?;
+                .finish(&mut df)?;
         }
         Ok(())
     };
-    split_lf(Some(100_000))?;
+
+    // split_lf(Some(1_000_000), lf)?;
+    for file in files_data {
+        lf = LazyCsvReader::new(file)
+            .with_has_header(true)
+            .with_dtype_overwrite(Some(schema.clone()))
+            .finish()?;
+        split_lf(Some(300_000), lf)?;
+    }
+
     Ok(())
 }
