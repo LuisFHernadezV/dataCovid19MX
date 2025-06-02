@@ -45,7 +45,7 @@ fn main() -> color_eyre::Result<()> {
     // que se puede relacionar con un hashmap y lo arreglamos en la tabla principal
     let df_contrys = get_unique_contry(&lf, "PAIS", "CLAVE")?;
     tables_cat.insert("PAISES".into(), df_contrys.collect()?);
-    let dir_sql = Path::new("DbCov19mx");
+    let dir_sql = Path::new("DB");
     fs::create_dir_all(dir_sql)?;
     let path = dir_sql.join("db_cov19mx.db");
     let sql_write = SqlWriter::new(path)?;
