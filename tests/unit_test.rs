@@ -36,7 +36,7 @@ fn test_exctract_zip() {
     assert!(extract_zip(path, &dir).is_ok());
 }
 #[test]
-#[ignore = "ok"]
+// #[ignore = "ok"]
 fn test_get_data() {
     let urls = vec![
         "https://datosabiertos.salud.gob.mx/gobmx/salud/datos_abiertos/historicos/2020/COVID19MEXICO2020.zip",
@@ -319,7 +319,7 @@ fn data_unique() -> Result<(), color_eyre::eyre::Error> {
     panic!()
 }
 #[test]
-// #[ignore = "reason"]
+#[ignore = "reason"]
 fn test_load_data_covid() -> Result<(), color_eyre::eyre::Error> {
     let dir_dicc = Path::new("/home/luish/Documentos/Proyects/Rust/db_cov19mx/data_dicc");
     let dir_csv = Path::new("/home/luish/Documentos/Proyects/Rust/db_cov19mx/data_csv");

@@ -5,7 +5,6 @@ use crate::xlxs_to_pl::ExcelReader;
 use calamine::{open_workbook, Reader, Xlsx};
 use futures::future::join;
 use polars::prelude::*;
-use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::env;
 use std::fs;
@@ -49,27 +48,22 @@ fn string_to_static_str(s: String) -> &'static str {
 pub fn to_str(s: String) -> &'static str {
     string_to_static_str(s)
 }
-fn generic_hash(s: &str) -> u64 {
-    let mut hasher = Sha256::new();
-    hasher.update(s.as_bytes());
-    // Get the result and convert to a byte array
-    let result = hasher.finalize();
+fn simple_hash(s: &str) -> u64 {
+    let mut hash: u64 = 0;
+    let modulo: u64 = 1_000_000_000 + 9;
 
-    // Parse enough bytes from the hash to create a u64
-    // We'll use the first 8 bytes
-    let mut bytes = [0u8; 8];
-    bytes.copy_from_slice(&result[0..8]);
+    for char in s.chars() {
+        hash = (hash + (char as u64)) % modulo;
+    }
 
-    // Convert the bytes to u64 and apply the modulo
-    let hash_int = u64::from_be_bytes(bytes);
-    hash_int % 1_000_000_000
+    hash
 }
 fn hash_column(exp: Expr) -> Expr {
     exp.map(
         |c: Column| -> PolarsResult<Option<Column>> {
             let out: UInt64Chunked = c
                 .str()?
-                .apply_nonnull_values_generic(DataType::UInt64, generic_hash);
+                .apply_nonnull_values_generic(DataType::UInt64, simple_hash);
             Ok(Some(out.into_column()))
         },
         GetOutput::from_type(DataType::UInt64),
