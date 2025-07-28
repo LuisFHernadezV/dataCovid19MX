@@ -109,7 +109,7 @@ fn main() -> color_eyre::Result<()> {
                     .clone()
                     .with_schema(Some(schema_sql.clone()))
                     .with_table(Some("COVID19MEXICO".to_string()))
-                    .with_batch_size(NonZeroUsize::new(80_000).unwrap())
+                    .with_batch_size(NonZeroUsize::new(160_000).unwrap())
                     .if_exists(IfExistsOption::Append)
                     .with_strict_insert(false)
                     .with_index(false)
@@ -144,7 +144,7 @@ fn main() -> color_eyre::Result<()> {
             .with_has_header(true)
             .with_dtype_overwrite(Some(schema.clone()))
             .finish()?;
-        split_lf(Some(300_000), lf)?;
+        split_lf(Some(600_000), lf)?;
     }
 
     Ok(())

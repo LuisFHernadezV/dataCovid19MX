@@ -321,8 +321,12 @@ fn data_unique() -> Result<(), color_eyre::eyre::Error> {
 #[test]
 // #[ignore = "reason"]
 fn test_load_data_covid() -> Result<(), color_eyre::eyre::Error> {
-    let dir_dicc = Path::new("/home/luish/Documentos/Proyects/Rust/db_cov19mx/data_dicc");
-    let dir_csv = Path::new("/home/luish/Documentos/Proyects/Rust/db_cov19mx/data_csv");
+    let dir_dicc = Path::new(
+        "/Users/luisfranciscohernandezvilla/Documents/proyects/rust/dataCovid19MX/data_dicc",
+    );
+    let dir_csv = Path::new(
+        "/Users/luisfranciscohernandezvilla/Documents/proyects/rust/dataCovid19MX/data_csv",
+    );
     let file_des = dir_dicc.join("240708 Descriptores_.xlsx");
     let mut schema_sql = get_schema_sql(file_des)?;
     schema_sql.with_column(

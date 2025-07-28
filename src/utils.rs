@@ -100,7 +100,8 @@ pub fn get_df_cat<P: AsRef<Path>>(
                     concat_str([col(firs_col.clone()), col(secon_col.clone())], "", false)
                         .cast(DataType::UInt64)
                         .alias("CLAVE"),
-                    all(),
+                    all().exclude(["MUNICIPIO"]),
+                    col("MUNICIPIO").alias("DESCRIPCIÓN"),
                 ])
                 .with_columns([col(secon_col.clone()).cast(DataType::UInt64)]);
         } else {
@@ -109,7 +110,7 @@ pub fn get_df_cat<P: AsRef<Path>>(
                 .with_columns([col(firs_col.clone()).cast(DataType::UInt64)]);
         }
         if sheet == "Catálogo RESULTADO_LAB" {
-            // drop the columns that has all values nuull
+            // drop the columns that has all values null
             df_lazy = df_lazy.select([col(firs_col), col(secon_col)]);
         }
 
