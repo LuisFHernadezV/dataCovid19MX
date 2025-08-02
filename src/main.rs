@@ -115,7 +115,6 @@ fn main() -> color_eyre::Result<()> {
                     .with_index(false)
                     .finish(&mut df)?;
                 offset += n as i64;
-                println!("{offset} Registros recorridos");
                 df = lf.clone().slice(offset, n).collect()?;
             }
         } else {
@@ -130,7 +129,7 @@ fn main() -> color_eyre::Result<()> {
                 .clone()
                 .with_schema(Some(schema_sql.clone()))
                 .with_table(Some("COVID19MEXICO".to_string()))
-                .with_batch_size(NonZeroUsize::new(200_000).unwrap())
+                .with_batch_size(NonZeroUsize::new(220_000).unwrap())
                 .if_exists(IfExistsOption::Replace)
                 .with_index(false)
                 .finish(&mut df)?;
@@ -144,7 +143,7 @@ fn main() -> color_eyre::Result<()> {
             .with_has_header(true)
             .with_dtype_overwrite(Some(schema.clone()))
             .finish()?;
-        split_lf(Some(600_000), lf)?;
+        split_lf(Some(900_000), lf)?;
     }
 
     Ok(())

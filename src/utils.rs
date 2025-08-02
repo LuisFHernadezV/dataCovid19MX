@@ -91,7 +91,11 @@ pub fn get_df_cat<P: AsRef<Path>>(
             df_lazy = df
                 .lazy()
                 .with_columns([col(firs_col.clone()).cast(DataType::UInt64)])
-                .rename(["CLAVE_ENTIDAD"], ["CLAVE"], false);
+                .rename(
+                    ["CLAVE_ENTIDAD", "ENTIDAD_FEDERATIVA"],
+                    ["CLAVE", "DESCRIPCIÓN"],
+                    false,
+                );
         } else if sheet == "Catálogo MUNICIPIOS" {
             df_lazy = df
                 .lazy()
