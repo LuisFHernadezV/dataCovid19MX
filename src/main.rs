@@ -20,7 +20,7 @@ fn main() -> color_eyre::Result<()> {
     }
     let file_des = dir_dicc.join("240708 Descriptores_.xlsx");
     let schema = get_schema_pl(&file_des)?;
-    // Creamos un vector con los archivos csv que seran leidos
+    // Creamos un vector con los archivos CSV que serán leídos
     let mut files_data = Vec::new();
     for entry in fs::read_dir(dir_csv)? {
         let entry = entry?;
@@ -32,7 +32,7 @@ fn main() -> color_eyre::Result<()> {
         .with_dtype_overwrite(Some(schema.clone()))
         .finish()?;
     // Leemos el archivo que contiene todas las tablas con las que
-    // se reelacionará la tabla final
+    // se relacionará la tabla final
     let file_cat = dir_dicc.join("240708 Catalogos.xlsx");
     let mut tables_cat = get_df_cat(file_cat)?;
     let schema_des = SqliteSchema::new(
@@ -41,7 +41,7 @@ fn main() -> color_eyre::Result<()> {
             .with_type_sql(SqliteDataType::INTEGER)
             .with_primary_key(true),
     );
-    // Como la columna de los paises vienen por nombre se hace una tabla con la
+    // Como la columna de los países vienen por nombre se hace una tabla con la
     // que se puede relacionar con un hashmap y lo arreglamos en la tabla principal
     let df_contrys = get_unique_contry(&lf, "PAIS", "CLAVE")?;
     tables_cat.insert("PAISES".into(), df_contrys.collect()?);
@@ -94,9 +94,9 @@ fn main() -> color_eyre::Result<()> {
             let mut offset = 0;
             let mut df = lf.clone().slice(offset, n).collect()?;
             while !df.is_empty() {
-                //limpiamos la data cambiando las columnas de los paises por sus hashmap y ademas hacemos unos
-                // cambios en la columna de las entidades que nos perimtan mapear bien las dos tablas
-                // Creamos una función que divide la data en lotes para hacerlo menos pesado con la opcion de
+                //limpiamos la data cambiando las columnas de los países por sus hashmap y ademas hacemos unos
+                // cambios en la columna de las entidades que nos permitan mapear bien las dos tablas
+                // Creamos una función que divide la data en lotes para hacerlo menos pesado con la opción de
                 // poder hacerlo todo en una vez lo cual requiere mas recursos computacionales.
                 df = clean_data_covid(df.lazy()).collect()?;
                 let mask = is_in(

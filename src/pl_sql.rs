@@ -34,7 +34,7 @@ impl std::fmt::Display for SqliteDataType {
     }
 }
 impl SqliteDataType {
-    pub fn from_polar_type(data_type: &DataType) -> Self {
+    pub fn from_polars_type(data_type: &DataType) -> Self {
         match data_type {
             DataType::Boolean => SqliteDataType::INTEGER,
             DataType::UInt8 => SqliteDataType::INTEGER,
@@ -159,7 +159,7 @@ impl SqliteSchema {
         let mut columns: IndexMap<String, SqliteColOption> = IndexMap::new();
 
         for field in schema.iter_fields() {
-            let type_of = SqliteDataType::from_polar_type(field.dtype());
+            let type_of = SqliteDataType::from_polars_type(field.dtype());
             columns.insert(
                 field.name().to_string(),
                 SqliteColOption::default().with_type_sql(type_of).clone(),
