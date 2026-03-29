@@ -325,7 +325,7 @@ erDiagram
 
 ```bash
 # Clonar el repositorio
-git clone https://github.com/tu_usuario/dataCovid19MX.git
+git clone https://github.com/LuisFHernadezV/dataCovid19MX.git
 cd dataCovid19MX
 
 # Instalar dependencias y compilar
